@@ -23,6 +23,8 @@ import com.gaurav.avnc.R
 import com.gaurav.avnc.util.DeviceAuthPrompt
 import com.gaurav.avnc.util.EdgeToEdgeHelper
 import com.gaurav.avnc.util.AppPreferences
+import com.gaurav.avnc.util.RemoteInputPreferences
+import com.gaurav.avnc.model.RemotePlatform
 import android.widget.Toast
 import com.google.android.material.appbar.MaterialToolbar
 
@@ -81,7 +83,15 @@ class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreference
         }
     }
 
-    @Keep class Main : PrefFragment(R.xml.pref_main)
+    @Keep class Main : PrefFragment(R.xml.pref_main) {
+        override fun onCreate(savedInstanceState: Bundle?) {
+            super.onCreate(savedInstanceState)
+            findPreference<Preference>("remote_input_templates")!!.setOnPreferenceClickListener {
+                RemoteInputEditor.showTemplates(requireContext())
+                true
+            }
+        }
+    }
     @Keep class Appearance : PrefFragment(R.xml.pref_appearance)
 
     @Keep class Viewer : PrefFragment(R.xml.pref_viewer) {
@@ -107,8 +117,20 @@ class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreference
         private val prefChangeListener = OnSharedPreferenceChangeListener { _, _ -> applyTests() }
 
         override fun onCreate(savedInstanceState: Bundle?) {
+            // Migrate before ListPreference persists its XML defaults as if they were saved choices.
+            val remotePreferences = RemoteInputPreferences(requireContext())
             super.onCreate(savedInstanceState)
             preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(prefChangeListener)
+            findPreference<Preference>("remote_input_templates")!!.setOnPreferenceClickListener {
+                RemoteInputEditor.showTemplates(requireContext())
+                true
+            }
+            findPreference<ListPreference>("gesture_swipe3")!!.setOnPreferenceChangeListener { _, _ ->
+                RemotePlatform.entries.filter { it != RemotePlatform.AUTO }.forEach { platform ->
+                    remotePreferences.saveTemplate(platform, remotePreferences.getOverrides(platform).copy(threeFinger = "legacy"))
+                }
+                true
+            }
 
             findPreference<Preference>("restore_recommended_input")!!.setOnPreferenceClickListener {
                 AppPreferences(requireContext()).restoreRecommendedInput()
@@ -118,9 +140,8 @@ class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreference
                         "gesture_long_press_swipe").forEach { key ->
                     findPreference<ListPreference>(key)?.value = values.getString(key, null)
                 }
-                findPreference<SwitchPreference>("remote_scroll_inertia")!!.isChecked = true
+                RemotePlatform.entries.filter { it != RemotePlatform.AUTO }.forEach(remotePreferences::resetTemplate)
                 findPreference<SwitchPreference>("use_system_keyboard")!!.isChecked = false
-                findPreference<SwitchPreference>("invert_vertical_scrolling")!!.isChecked = false
                 findPreference<SeekBarPreference>("gesture_swipe_sensitivity")!!.value = 10
                 Toast.makeText(requireContext(), R.string.msg_input_restored, Toast.LENGTH_SHORT).show()
                 true
@@ -147,11 +168,7 @@ class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreference
                 disabledStateSummary = getText(R.string.pref_long_press_swipe_disabled_summary)
             }
 
-            // To reduce clutter & avoid 'UI overload', pref to invert vertical scrolling is
-            // only visible when 'Scroll remote content' option is used.
-            findPreference<SwitchPreference>("invert_vertical_scrolling")!!.apply {
-                showIf { it["gesture_swipe2"] == null || it.values.contains("remote-scroll") }
-            }
+
         }
 
         override fun onDestroy() {

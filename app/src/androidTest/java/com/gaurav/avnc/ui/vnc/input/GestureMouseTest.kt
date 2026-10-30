@@ -283,6 +283,8 @@ class GestureMouseTest {
         }
         withSession(inertia = false) { session, dispatcher ->
             session.onActivity {
+                it.viewModel.profile.remoteInputOverrides = "{\"axisLock\":false}"
+                it.applyRemoteInputSettings()
                 dispatcher.onVirtualPointerStart()
                 // 5 dp at 2x sensitivity exceeds the new 8 dp tick threshold.
                 dispatcher.onVirtualPointerScroll(5f, 5f)
@@ -347,7 +349,7 @@ class GestureMouseTest {
         session.onActivity {
             it.viewModel.panFrame(-80f, -40f)
             val density = it.resources.displayMetrics.density
-            dispatcher.onSwipe2(start, PointF(start.x + 50, start.y + 50), 0f, 40f * density)
+            dispatcher.onSwipe2(start, PointF(start.x + 50, start.y + 50), 40f * density, 0f)
             dispatcher.onRemoteScrollEnd(0f, 0f)
             dispatcher.onGestureStop(start)
         }

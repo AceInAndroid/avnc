@@ -62,10 +62,11 @@ class FrameScroller(val viewModel: VncViewModel) {
          *
          * minY,maxY are calculated similarly.
          */
-        val minX = if (x >= safe.left) x else (safe.width()) - (fs.fbWidth * fs.scale)
-        val maxX = if (x >= safe.left) x else safe.left
-        val minY = if (y >= safe.top) y else (safe.height()) - (fs.fbHeight * fs.scale)
-        val maxY = if (y >= safe.top) y else safe.top
+        val rect = fs.contentRect
+        val minX = if (rect.width() * fs.scale <= safe.width()) x else safe.right - rect.right * fs.scale
+        val maxX = if (rect.width() * fs.scale <= safe.width()) x else safe.left - rect.left * fs.scale
+        val minY = if (rect.height() * fs.scale <= safe.height()) y else safe.bottom - rect.bottom * fs.scale
+        val maxY = if (rect.height() * fs.scale <= safe.height()) y else safe.top - rect.top * fs.scale
 
         xAnimator.apply {
             setStartValue(x)

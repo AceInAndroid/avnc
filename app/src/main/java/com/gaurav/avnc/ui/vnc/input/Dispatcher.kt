@@ -53,13 +53,12 @@ import com.gaurav.avnc.vnc.XKeySym
  */
 class Dispatcher(private val activity: VncActivity) {
 
-    private companion object {
-        // Panel deltas arrive in dp; 1:1 remote pixels made a desktop take many swipes.
-        const val TOUCHPAD_POINTER_GAIN = 3f
-    }
-
     private val viewModel = activity.viewModel
     private val gesturePref = viewModel.pref.input.gesture
+    private val remoteConfig get() = viewModel.remoteInputConfig
+    val systemGesturesEnabled get() = remoteConfig.systemGestures
+    fun onThreeFingerAction(direction: String) = activity.performThreeFingerAction(direction)
+    fun reloadConfig() { cancelInput(); config = Config() }
     val accelerator = PointerAcceleration(viewModel)
 
 
@@ -73,12 +72,12 @@ class Dispatcher(private val activity: VncActivity) {
     private val density = activity.resources.displayMetrics.density
     private val drag = PointerDragController(activity.binding.inputView, viewModel)
     private val remoteScroll = RemoteScrollController(activity.binding.inputView,
-            { gesturePref.remoteScrollInertia },
+            { remoteConfig.inertia != "off" },
             { viewModel.connected && viewModel.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT && viewModel.inPiPMode.value != true },
             { button, point ->
                 viewModel.messenger?.sendPointerButtonDown(button, point)
                 viewModel.messenger?.sendPointerButtonUp(button, point)
-            })
+            }, { remoteConfig })
     private var scrollMode: BasePointerMode? = null
 
     private fun scroll(mode: BasePointerMode, point: PointF, dxDp: Float, dyDp: Float) {
@@ -87,7 +86,7 @@ class Dispatcher(private val activity: VncActivity) {
             remoteScroll.begin(remote)
             scrollMode = mode
         }
-        remoteScroll.scroll(dxDp, dyDp * if (gesturePref.invertVerticalScrolling) -1 else 1)
+        remoteScroll.scroll(dxDp, dyDp)
     }
 
     fun stopRemoteScroll() {
@@ -144,9 +143,11 @@ class Dispatcher(private val activity: VncActivity) {
          */
         private fun selectSwipeAction(actionName: String): (PointF, PointF, Float, Float) -> Unit {
             return when (actionName) {
-                "pan" -> { _, _, dx, dy -> doPan(dx, dy) }
+                "pan" -> { _, _, dx, dy -> doPan(dx * gesturePref.swipeSensitivity, dy * gesturePref.swipeSensitivity) }
                 "move-pointer" -> { _, cp, dx, dy -> defaultMode.doMovePointer(cp, dx, dy) }
-                "remote-scroll" -> { sp, _, dx, dy -> scroll(defaultMode, sp, dx / density, dy / density) }
+                "remote-scroll" -> { sp, _, dx, dy -> scroll(defaultMode, sp,
+                        dx / density,
+                        dy / density) }
                 "remote-drag" -> { sp, cp, dx, dy -> dragTo(defaultMode, PointerButton.Left, sp, cp, dx, dy) }
                 "remote-drag-middle" -> { sp, cp, dx, dy -> dragTo(defaultMode, PointerButton.Middle, sp, cp, dx, dy) }
                 else -> { _, _, _, _ -> } //Nothing
@@ -200,9 +201,7 @@ class Dispatcher(private val activity: VncActivity) {
     fun onDragMove(p: PointF, dx: Float, dy: Float) = drag.move(p, dx, dy)
 
     fun onRemoteScrollEnd(vx: Float, vy: Float, cancelled: Boolean = false) {
-        remoteScroll.end(vx / density * gesturePref.swipeSensitivity,
-                vy / density * gesturePref.swipeSensitivity * if (gesturePref.invertVerticalScrolling) -1 else 1,
-                cancelled)
+        remoteScroll.end(vx / density, vy / density, cancelled)
     }
 
     fun onTap1(p: PointF) = config.tap1Action(p)
@@ -213,7 +212,12 @@ class Dispatcher(private val activity: VncActivity) {
 
     fun onSwipe1(sp: PointF, cp: PointF, dx: Float, dy: Float) = config.swipe1Action(sp, cp, dx, dy)
     fun onSwipe2(sp: PointF, cp: PointF, dx: Float, dy: Float) = config.swipe2Action(sp, cp, dx, dy)
-    fun onSwipe3(sp: PointF, cp: PointF, dx: Float, dy: Float) = config.swipe3Action(sp, cp, dx, dy)
+    fun onSwipe3(sp: PointF, cp: PointF, dx: Float, dy: Float) {
+        when (remoteConfig.threeFinger) {
+            "pan" -> doPan(dx * gesturePref.swipeSensitivity, dy * gesturePref.swipeSensitivity)
+            "legacy" -> config.swipe3Action(sp, cp, dx, dy)
+        }
+    }
     fun onDoubleTapSwipe(sp: PointF, cp: PointF, dx: Float, dy: Float) = config.doubleTapSwipeAction(sp, cp, dx, dy)
     fun onLongPressSwipe(sp: PointF, cp: PointF, dx: Float, dy: Float) {
         if (drag.active) drag.move(cp, dx, dy)
@@ -229,6 +233,24 @@ class Dispatcher(private val activity: VncActivity) {
     fun onMouseScroll(p: PointF, hs: Float, vs: Float) = directMode.doRemoteScrollFromMouse(p, hs, vs)
     fun onMouseBack(p: PointF) = config.mouseBackAction(p)
 
+    fun onAbsolutePointerMove(point: PointF) {
+        val bounds = viewModel.frameState.contentRect
+        if (bounds.width() < 1 || bounds.height() < 1) return
+        viewModel.messenger?.sendPointerMove(PointF(point.x.coerceIn(bounds.left, bounds.right - 1),
+                                                  point.y.coerceIn(bounds.top, bounds.bottom - 1)))
+    }
+
+    fun onMacDockEdge(edge: String) {
+        val rect = viewModel.frameState.contentRect
+        if (rect.isEmpty) return
+        val point = when (edge) {
+            "left" -> PointF(rect.left, rect.centerY())
+            "right" -> PointF(rect.right - 1, rect.centerY())
+            else -> PointF(rect.centerX(), rect.bottom - 1)
+        }
+        onAbsolutePointerMove(point)
+    }
+
     fun onCapturedMouseButtonDown(button: PointerButton) = relativeMode.doButtonDown(button, PointF())
     fun onCapturedMouseButtonUp(button: PointerButton) = relativeMode.doButtonUp(button, PointF())
     fun onCapturedMouseMove(dx: Float, dy: Float) = relativeMode.doMovePointer(dx, dy, false)
@@ -241,8 +263,7 @@ class Dispatcher(private val activity: VncActivity) {
         stopFrameFling()
         virtualMode.onGestureStart()
     }
-    fun onVirtualPointerMove(dx: Float, dy: Float) =
-            virtualMode.doMovePointer(dx * TOUCHPAD_POINTER_GAIN, dy * TOUCHPAD_POINTER_GAIN, false)
+    fun onVirtualPointerMove(dx: Float, dy: Float) = virtualMode.doTouchMove(dx, dy)
     fun onVirtualPointerButton(button: PointerButton, down: Boolean) {
         if (down) virtualMode.doButtonDown(button, PointF())
         else virtualMode.doButtonUp(button, PointF())
@@ -251,8 +272,7 @@ class Dispatcher(private val activity: VncActivity) {
         stopRemoteScroll()
         repeat(count.coerceIn(1, 2)) { virtualMode.doClick(button, PointF()) }
     }
-    fun onVirtualPointerScroll(dx: Float, dy: Float) =
-            scroll(virtualMode, PointF(), dx * gesturePref.swipeSensitivity, dy * gesturePref.swipeSensitivity)
+    fun onVirtualPointerScroll(dx: Float, dy: Float) = scroll(virtualMode, PointF(), dx, dy)
     fun onVirtualPointerScrollEnd(vx: Float, vy: Float, cancelled: Boolean = false) =
             onRemoteScrollEnd(vx * density, vy * density, cancelled)
     fun onVirtualPointerStop(cancelled: Boolean = false) {

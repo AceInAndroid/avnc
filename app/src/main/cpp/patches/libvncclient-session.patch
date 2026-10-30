@@ -1,0 +1,393 @@
+--- a/include/rfb/rfbclient.h
++++ b/include/rfb/rfbclient.h
+@@ -518,6 +518,14 @@
+      * Called to verify a server certificate
+      */
+     VerifyServerCertificateProc VerifyServerCertificate;
++
++    /* AVNC: complete validated layout, with screen fields in host byte order.
++     * count == 0 means metadata is unavailable/invalid. */
++    void (*GotDesktopLayout)(struct _rfbClient*, int, int, int, const rfbExtDesktopScreen*);
++
++    /* AVNC: recursive protocol-write transaction lock; never held while decoding. */
++    void (*LockWriteToServer)(struct _rfbClient*);
++    void (*UnlockWriteToServer)(struct _rfbClient*);
+ 
+ } rfbClient;
+ 
+--- a/src/libvncclient/rfbclient.c
++++ b/src/libvncclient/rfbclient.c
+@@ -1252,8 +1252,8 @@
+  * SetFormatAndEncodings.
+  */
+ 
+-rfbBool
+-SetFormatAndEncodings(rfbClient* client)
++static rfbBool
++SetFormatAndEncodingsUnlocked(rfbClient* client)
+ {
+   rfbSetPixelFormatMsg spf;
+   union {
+@@ -1479,6 +1479,16 @@
+   return TRUE;
+ }
+ 
++rfbBool
++SetFormatAndEncodings(rfbClient* client)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = SetFormatAndEncodingsUnlocked(client);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
++}
++
+ 
+ /*
+  * SendIncrementalFramebufferUpdateRequest.
+@@ -1511,6 +1521,22 @@
+     rfbClientLog("Skipping Update - resize in progress\n");
+     return TRUE;
+   }
++
++  if (!client->isUpdateRectManagedByLib) {
++    int right = x + w, bottom = y + h;
++    if (x < client->updateRect.x) x = client->updateRect.x;
++    if (y < client->updateRect.y) y = client->updateRect.y;
++    if (right > client->updateRect.x + client->updateRect.w)
++      right = client->updateRect.x + client->updateRect.w;
++    if (bottom > client->updateRect.y + client->updateRect.h)
++      bottom = client->updateRect.y + client->updateRect.h;
++    w = right - x;
++    h = bottom - y;
++  }
++  if (x < 0 || y < 0 || x >= client->width || y >= client->height || w <= 0 || h <= 0)
++    return TRUE;
++  if (w > client->width - x) w = client->width - x;
++  if (h > client->height - y) h = client->height - y;
+ 
+   fur.type = rfbFramebufferUpdateRequest;
+   fur.incremental = incremental ? 1 : 0;
+@@ -1559,7 +1585,7 @@
+  * (Think HelpDesk type applications)
+  */
+ 
+-rfbBool TextChatSend(rfbClient* client, char *text)
++static rfbBool TextChatSendUnlocked(rfbClient* client, char *text)
+ {
+     rfbTextChatMsg chat;
+     int count = strlen(text);
+@@ -1579,6 +1605,16 @@
+             return FALSE;
+     }
+     return TRUE;
++}
++
++rfbBool
++TextChatSend(rfbClient* client, char *text)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = TextChatSendUnlocked(client, text);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
+ }
+ 
+ rfbBool TextChatOpen(rfbClient* client)
+@@ -1693,6 +1729,7 @@
+ static rfbBool
+ ResizeClientBuffer(rfbClient* client, int width, int height)
+ {
++  if (width <= 0 || height <= 0) return FALSE;
+   client->width = width;
+   client->height = height;
+   /* Only adadpt updateRect to new dimensions if managed by lib */
+@@ -1701,6 +1738,15 @@
+       client->updateRect.w = client->width;
+       client->updateRect.h = client->height;
+   }
++  else {
++      /* Keep a user-managed ROI valid after a server-side display resize. */
++      if (client->updateRect.x >= width) client->updateRect.x = 0;
++      if (client->updateRect.y >= height) client->updateRect.y = 0;
++      if (client->updateRect.w > width - client->updateRect.x)
++          client->updateRect.w = width - client->updateRect.x;
++      if (client->updateRect.h > height - client->updateRect.y)
++          client->updateRect.h = height - client->updateRect.y;
++  }
+   return client->MallocFrameBuffer(client);
+ }
+ 
+@@ -1709,8 +1755,8 @@
+  * SendExtDesktopSize
+  */
+ 
+-rfbBool
+-SendExtDesktopSize(rfbClient* client, uint16_t width, uint16_t height)
++static rfbBool
++SendExtDesktopSizeUnlocked(rfbClient* client, uint16_t width, uint16_t height)
+ {
+   rfbSetDesktopSizeMsg sdm;
+   rfbExtDesktopScreen screen;
+@@ -1751,6 +1797,16 @@
+   }
+ 
+   return TRUE;
++}
++
++rfbBool
++SendExtDesktopSize(rfbClient* client, uint16_t width, uint16_t height)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = SendExtDesktopSizeUnlocked(client, width, height);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
+ }
+ 
+ 
+@@ -1808,7 +1864,7 @@
+  */
+ 
+ static rfbBool
+-sendExtClientCutTextNotify(rfbClient *client)
++sendExtClientCutTextNotifyUnlocked(rfbClient *client)
+ {
+   rfbClientCutTextMsg cct = {0, };
+   const uint32_t be_flags = rfbClientSwap32IfLE(rfbExtendedClipboard_Notify
+@@ -1821,7 +1877,17 @@
+ }
+ 
+ static rfbBool
+-sendExtClientCutTextRequest(rfbClient *client)
++sendExtClientCutTextNotify(rfbClient *client)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = sendExtClientCutTextNotifyUnlocked(client);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
++}
++
++static rfbBool
++sendExtClientCutTextRequestUnlocked(rfbClient *client)
+ {
+   rfbClientCutTextMsg cct = {0, };
+   const uint32_t be_flags = rfbClientSwap32IfLE(rfbExtendedClipboard_Text|rfbExtendedClipboard_Request);
+@@ -1830,6 +1896,16 @@
+   rfbBool ret = WriteToRFBServer(client, (char *)&cct, sz_rfbClientCutTextMsg)
+                 && WriteToRFBServer(client, (char *)&be_flags, sizeof(be_flags));
+   return ret;
++}
++
++static rfbBool
++sendExtClientCutTextRequest(rfbClient *client)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = sendExtClientCutTextRequestUnlocked(client);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
+ }
+ 
+ /**
+@@ -1876,7 +1952,7 @@
+  */
+ 
+ static rfbBool
+-sendExtClientCutTextProvide(rfbClient *client, char* data, int len)
++sendExtClientCutTextProvideUnlocked(rfbClient *client, char* data, int len)
+ {
+   rfbClientCutTextMsg cct = {0, };
+   int sentLen = len + 1;  /* Sent data is null terminated*/
+@@ -1918,14 +1994,24 @@
+   free(cbuf);
+   return ret;
+ }
++
++static rfbBool
++sendExtClientCutTextProvide(rfbClient *client, char* data, int len)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = sendExtClientCutTextProvideUnlocked(client, data, len);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
++}
+ #endif
+ 
+ /*
+  * SendClientCutText.
+  */
+ 
+-rfbBool
+-SendClientCutText(rfbClient* client, char *str, int len)
++static rfbBool
++SendClientCutTextUnlocked(rfbClient* client, char *str, int len)
+ {
+   rfbClientCutTextMsg cct;
+ 
+@@ -1939,13 +2025,33 @@
+ }
+ 
+ rfbBool
+-SendClientCutTextUTF8(rfbClient* client, char *str, int len)
++SendClientCutText(rfbClient* client, char *str, int len)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = SendClientCutTextUnlocked(client, str, len);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
++}
++
++static rfbBool
++SendClientCutTextUTF8Unlocked(rfbClient* client, char *str, int len)
+ {
+ #ifdef LIBVNCSERVER_HAVE_LIBZ
+     return client->extendedClipboardServerCapabilities && sendExtClientCutTextProvide(client, str, len);
+ #else
+     return FALSE;
+ #endif
++}
++
++rfbBool
++SendClientCutTextUTF8(rfbClient* client, char *str, int len)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = SendClientCutTextUTF8Unlocked(client, str, len);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
+ }
+ 
+ 
+@@ -2175,42 +2281,53 @@
+ 	if(!ResizeClientBuffer(client, rect.r.w, rect.r.h))
+ 	  return FALSE;
+ 	SendFramebufferUpdateRequest(client, 0, 0, rect.r.w, rect.r.h, FALSE);
++        if (client->GotDesktopLayout)
++          client->GotDesktopLayout(client, client->width, client->height, 0, NULL);
+ 	rfbClientLog("Got new framebuffer size: %dx%d\n", rect.r.w, rect.r.h);
+ 	continue;
+       }
+ 
+       if (rect.encoding == rfbEncodingExtDesktopSize) {
+-        /* read encoding data */
+-        int screens;
+-        int loop;
+-        rfbBool invalidScreen = FALSE;
+-        rfbExtDesktopScreen screen;
++        int count, i, j;
++        rfbBool valid;
++        rfbExtDesktopScreen screens[255];
++        rfbExtDesktopScreen wireScreen;
+         rfbExtDesktopSizeMsg eds;
+-        if (!ReadFromRFBServer(client, ((char *)&eds), sz_rfbExtDesktopSizeMsg)) {
++        if (!ReadFromRFBServer(client, (char *)&eds, sz_rfbExtDesktopSizeMsg))
+           return FALSE;
+-        }
+-
+-        screens = eds.numberOfScreens;
+-        for (loop=0; loop < screens; loop++)
+-        {
+-          if (!ReadFromRFBServer(client, ((char *)&screen), sz_rfbExtDesktopScreen)) {
++        count = eds.numberOfScreens;
++        valid = count > 0 && rect.r.w > 0 && rect.r.h > 0;
++        for (i = 0; i < count; ++i) {
++          if (!ReadFromRFBServer(client, (char *)&wireScreen, sz_rfbExtDesktopScreen))
+             return FALSE;
+-          }
+-          if (screen.width && screen.height) {
+-            client->screen = screen;
+-          } else {
+-            invalidScreen = TRUE;
+-          }
+-        }
+-
+-        if (!invalidScreen && (client->width != rect.r.w || client->height != rect.r.h)) {
+-          if(!ResizeClientBuffer(client, rect.r.w, rect.r.h)) {
+-            return FALSE;
+-          }
+-          rfbClientLog("Updated desktop size: %dx%d\n", rect.r.w, rect.r.h);
++          screens[i].id = rfbClientSwap32IfLE(wireScreen.id);
++          screens[i].x = rfbClientSwap16IfLE(wireScreen.x);
++          screens[i].y = rfbClientSwap16IfLE(wireScreen.y);
++          screens[i].width = rfbClientSwap16IfLE(wireScreen.width);
++          screens[i].height = rfbClientSwap16IfLE(wireScreen.height);
++          screens[i].flags = rfbClientSwap32IfLE(wireScreen.flags);
++          if (!screens[i].width || !screens[i].height ||
++              (unsigned int)screens[i].x + screens[i].width > rect.r.w ||
++              (unsigned int)screens[i].y + screens[i].height > rect.r.h)
++            valid = FALSE;
++          for (j = 0; j < i; ++j)
++            if (screens[j].id == screens[i].id) valid = FALSE;
+         }
+         client->requestedResize = FALSE;
+-
++        /* Failed responses to our resize request do not describe a new layout. */
++        if (rect.r.x == 1 && rect.r.y != 0)
++          continue;
++        if (!rect.r.w || !rect.r.h)
++          valid = FALSE;
++        else if (client->width != rect.r.w || client->height != rect.r.h) {
++          if (!ResizeClientBuffer(client, rect.r.w, rect.r.h))
++            return FALSE;
++        }
++        if (valid)
++          client->screen = wireScreen; /* Legacy resize API expects wire byte order. */
++        if (client->GotDesktopLayout)
++          client->GotDesktopLayout(client, client->width, client->height,
++                                   valid ? count : 0, valid ? screens : NULL);
+         continue;
+       }
+ 
+@@ -2731,6 +2848,8 @@
+       return FALSE;
+ 
+     SendFramebufferUpdateRequest(client, 0, 0, client->width, client->height, FALSE);
++    if (client->GotDesktopLayout)
++      client->GotDesktopLayout(client, client->width, client->height, 0, NULL);
+     rfbClientLog("Got new framebuffer size: %dx%d\n", client->width, client->height);
+     break;
+   }
+@@ -2743,6 +2862,8 @@
+     if (!ResizeClientBuffer(client, rfbClientSwap16IfLE(msg.prsfb.buffer_w), rfbClientSwap16IfLE(msg.prsfb.buffer_h)))
+       return FALSE;
+     SendFramebufferUpdateRequest(client, 0, 0, client->width, client->height, FALSE);
++    if (client->GotDesktopLayout)
++      client->GotDesktopLayout(client, client->width, client->height, 0, NULL);
+     rfbClientLog("Got new framebuffer size: %dx%d\n", client->width, client->height);
+     break;
+   }
+--- a/src/libvncclient/sockets.c
++++ b/src/libvncclient/sockets.c
+@@ -250,8 +250,8 @@
+  * Write an exact number of bytes, and don't return until you've sent them.
+  */
+ 
+-rfbBool
+-WriteToRFBServer(rfbClient* client, const char *buf, unsigned int n)
++static rfbBool
++WriteToRFBServerUnlocked(rfbClient* client, const char *buf, unsigned int n)
+ {
+   fd_set fds;
+   int i = 0;
+@@ -326,6 +326,17 @@
+     i += j;
+   }
+   return TRUE;
++}
++
++
++rfbBool
++WriteToRFBServer(rfbClient* client, const char *buf, unsigned int n)
++{
++  rfbBool result;
++  if (client->LockWriteToServer) client->LockWriteToServer(client);
++  result = WriteToRFBServerUnlocked(client, buf, n);
++  if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
++  return result;
+ }
+ 
+ 

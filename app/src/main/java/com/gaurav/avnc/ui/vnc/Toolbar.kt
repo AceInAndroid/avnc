@@ -16,11 +16,17 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import com.gaurav.avnc.R
 import com.gaurav.avnc.model.ServerProfile
+import com.gaurav.avnc.model.RemoteAction
+import com.gaurav.avnc.model.RemotePlatform
+import com.gaurav.avnc.ui.prefs.RemoteInputEditor
 import com.google.android.material.button.MaterialButton
 
 /** A single control entry, shared by the viewer capsule and keyboard header. */
 class Toolbar(private val activity: VncActivity) {
     private val vm = activity.viewModel
+    val macControls = MacViewerControls(activity)
+    private lateinit var macRow: View
+    private var legacyControls = emptyList<View>()
     private val style = ControlStyle(activity)
     private val host = activity.binding.frameContainer
     private val capsule = LinearLayout(activity)
@@ -32,6 +38,7 @@ class Toolbar(private val activity: VncActivity) {
     private var initialized = false
     private var connected = false
     private var menuHelp = false
+    private var menuActions = false
     private var bottomInset = 0
     private var compactLabels: Boolean? = null
     private var edgeCandidate = false
@@ -75,6 +82,8 @@ class Toolbar(private val activity: VncActivity) {
             id = R.id.controls_collapse
             setOnClickListener { vm.pref.input.controlsCollapsed = true; refresh() }
         }, LinearLayout.LayoutParams(style.dp(48), style.dp(48)))
+        legacyControls = (0 until capsule.childCount).map { capsule.getChildAt(it) }
+        macRow = macControls.createRow()
         host.addView(capsule, floatingParams())
         opener.id = R.id.open_toolbar_btn
         opener.elevation = style.dp(6).toFloat()
@@ -100,6 +109,8 @@ class Toolbar(private val activity: VncActivity) {
         activity.onBackPressedDispatcher.addCallback(activity, back)
         activity.binding.inputView.controlGestureInterceptor = ::onEdgeTouch
         host.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> position(); activity.floatingTouchpad.reposition() }
+        macControls.initialize()
+        vm.viewerSettingsVersion.observe(activity) { refresh(); if (isOpen) renderMenu() }
         vm.inPiPMode.observe(activity) { if (it) close(); refresh() }
         vm.activeViewMode.observe(activity) { refresh() }
         vm.activeGestureStyle.observe(activity) { if (isOpen) renderMenu() }
@@ -115,6 +126,14 @@ class Toolbar(private val activity: VncActivity) {
         val show = connected && vm.inPiPMode.value != true && !activity.computerKeyboard.isVisible
         capsule.isVisible = show && !vm.pref.input.controlsCollapsed
         opener.isVisible = show && vm.pref.input.controlsCollapsed
+        if (macControls.isMac && macRow.parent == null) {
+            capsule.removeAllViews()
+            capsule.addView(macRow, LinearLayout.LayoutParams(-1, style.dp(48)))
+        } else if (!macControls.isMac && macRow.parent != null) {
+            capsule.removeAllViews()
+            legacyControls.forEach { capsule.addView(it) }
+        }
+        macControls.refresh()
         val canInput = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT
         capsule.findViewById<View>(R.id.keyboard_btn)?.apply { isEnabled = canInput; alpha = if (canInput) 1f else .4f }
         touchpadButton.isEnabled = canInput
@@ -137,6 +156,7 @@ class Toolbar(private val activity: VncActivity) {
         if (!connected || vm.inPiPMode.value == true) return
         activity.releaseInputControls()
         menuHelp = false
+        menuActions = false
         renderMenu()
         menuOverlay.isVisible = true
         back.isEnabled = true
@@ -161,12 +181,13 @@ class Toolbar(private val activity: VncActivity) {
         menuOverlay.isVisible = false
         back.isEnabled = false
         menuHelp = false
+        menuActions = false
     }
 
     fun onStateChange(isConnected: Boolean) {
         initialize()
         connected = isConnected
-        if (!connected) close()
+        if (!connected) { close(); macControls.dismiss() }
         refresh()
     }
 
@@ -185,6 +206,8 @@ class Toolbar(private val activity: VncActivity) {
                 if (params.bottomMargin != margin) { params.bottomMargin = margin; view.layoutParams = params }
             }
         }
+        val capsuleWidth = if (macControls.isMac) minOf(host.width - style.dp(24), style.dp(1000)).coerceAtLeast(1) else -2
+        if (capsule.layoutParams.width != capsuleWidth) capsule.layoutParams = capsule.layoutParams.apply { width = capsuleWidth }
         val menuHost = activity.binding.viewerRoot
         val landscape = menuHost.width > menuHost.height
         val width = minOf(menuHost.width - style.dp(24) - menuOverlay.paddingLeft - menuOverlay.paddingRight, style.dp(400))
@@ -218,22 +241,52 @@ class Toolbar(private val activity: VncActivity) {
     }
 
     private fun renderMenu() {
-        androidx.core.view.ViewCompat.setAccessibilityPaneTitle(menuPanel, activity.getString(if (menuHelp) R.string.control_help else R.string.control_title))
+        val title = when {
+            menuHelp -> R.string.control_help
+            menuActions -> R.string.remote_input_shortcuts
+            else -> R.string.control_title
+        }
+        androidx.core.view.ViewCompat.setAccessibilityPaneTitle(menuPanel, activity.getString(title))
         menuPanel.removeAllViews()
         val heading = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
-        heading.addView(style.label(activity.getString(if (menuHelp) R.string.control_help else R.string.control_title), 20f, true),
+        heading.addView(style.label(activity.getString(title), 20f, true),
                 LinearLayout.LayoutParams(0, style.dp(48), 1f))
         heading.addView(style.icon(R.drawable.ic_control_close, R.string.control_done).apply {
             id = R.id.controls_menu_close; setOnClickListener { close() }
         }, LinearLayout.LayoutParams(style.dp(48), style.dp(48)))
         menuPanel.addView(heading)
-        if (menuHelp) {
+        if (menuActions) {
+            val config = vm.remoteInputConfig
+            RemoteAction.entries.filter { config.shortcut(it) != null }.forEach { action ->
+                val label = RemoteInputEditor.actionLabel(activity, action)
+                option(label, enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT,
+                        tag = "remote_action_${action.name.lowercase()}") {
+                    close()
+                    activity.performRemoteAction(action)
+                }
+            }
+        } else if (menuHelp) {
             menuPanel.addView(style.label(activity.getString(R.string.control_help_intro), 16f, true).apply { setPadding(0, style.dp(8), 0, style.dp(8)) })
             menuPanel.addView(style.label(activity.getString(R.string.msg_mouse_gesture_help), 15f).apply {
                 setLineSpacing(style.dp(5).toFloat(), 1f); setPadding(0, style.dp(8), 0, style.dp(16))
             })
             menuPanel.addView(style.label(activity.getString(R.string.control_touchpad_hint), 15f).apply { setLineSpacing(style.dp(5).toFloat(), 1f) })
         } else {
+            if (macControls.isMac) {
+                section(R.string.mac_action_dock)
+                listOf(R.string.mac_spotlight to RemoteAction.SEARCH,
+                        R.string.mac_previous_app to RemoteAction.SWITCH_APP,
+                        R.string.mac_action_quick_look to RemoteAction.QUICK_LOOK,
+                        R.string.mac_action_fullscreen to RemoteAction.TOGGLE_FULLSCREEN,
+                        R.string.mac_show_desktop to RemoteAction.SHOW_DESKTOP).forEach { (label, action) ->
+                    option(label, enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT) {
+                        close(); activity.performRemoteAction(action)
+                    }
+                }
+                option(R.string.mac_dock_activation) { close(); macControls.showDockSettings() }
+                option(R.string.mac_displays) { close(); macControls.showDisplays() }
+                option(R.string.mac_quality) { close(); macControls.showQuality() }
+            }
             section(R.string.control_picture)
             option(R.string.control_fit) { vm.resetZoomToDefault(); close() }
             option(R.string.control_actual) { vm.resetZoom(); close() }
@@ -246,6 +299,21 @@ class Toolbar(private val activity: VncActivity) {
                 option(label, vm.activeViewMode.value == mode) { vm.setViewMode(mode); close() }
             }
             section(R.string.control_interaction)
+            val platform = RemoteInputEditor.platformLabel(activity, vm.remoteInputConfig.platform)
+            option(activity.getString(R.string.remote_input_this_computer) + " · " + platform, tag = "remote_input_session") {
+                close()
+                RemoteInputEditor.showSession(activity)
+            }
+            if (RemotePlatform.from(vm.profile.remotePlatform) == RemotePlatform.AUTO &&
+                    vm.remoteInputConfig.platform == RemotePlatform.GENERIC) {
+                menuPanel.addView(style.label(activity.getString(R.string.remote_input_auto_unknown), 13f).apply {
+                    setPadding(style.dp(12), 0, style.dp(12), style.dp(8))
+                })
+            }
+            option(R.string.remote_input_shortcuts, enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT) {
+                menuActions = true
+                renderMenu()
+            }
             if (vm.pref.viewer.toolbarShowGestureStyleToggle) {
                 listOf(R.string.control_auto to "auto", R.string.control_direct to "touchscreen", R.string.control_relative to "touchpad").forEach { (label, mode) ->
                     option(label, vm.profile.gestureStyle == mode, vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_VIDEO) { vm.setGestureStyle(mode); close() }
@@ -266,16 +334,23 @@ class Toolbar(private val activity: VncActivity) {
     }
 
     private fun option(label: Int, selected: Boolean? = null, enabled: Boolean = true, run: () -> Unit) {
-        val b = style.button(activity.getString(label) + if (selected == true) "  ✓" else "").apply {
-            contentDescription = activity.getString(label)
+        option(activity.getString(label), selected, enabled, run = run)
+    }
+
+    private fun option(label: String, selected: Boolean? = null, enabled: Boolean = true, tag: String? = null, run: () -> Unit) {
+        val b = style.button(label + if (selected == true) "  ✓" else "").apply {
+            this.tag = tag
+            contentDescription = label
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(style.dp(12), 0, style.dp(12), 0)
+            setPadding(style.dp(12), style.dp(6), style.dp(12), style.dp(6))
+            maxLines = 2
+            minimumHeight = style.dp(48)
             isEnabled = enabled; alpha = if (enabled) 1f else .4f
             style.select(this, selected == true)
             if (Build.VERSION.SDK_INT >= 30 && selected != null) stateDescription = activity.getString(if (selected) R.string.control_active else R.string.control_inactive)
             setOnClickListener { run() }
         }
-        menuPanel.addView(b, LinearLayout.LayoutParams(-1, -2).apply { height = style.dp(48); bottomMargin = style.dp(3) })
+        menuPanel.addView(b, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = style.dp(3) })
     }
 
     @SuppressLint("ClickableViewAccessibility")

@@ -32,7 +32,12 @@ class Cursor : Image() {
 
         // But if it moves near the edges, some part of the cursor can go outside the frame
         // So it needs to be clipped to be inside the frame.
-        val clippedDrawRect = RectF(normalDrawRect).apply { intersect(frameRect) }
+        val clippedDrawRect = RectF(normalDrawRect)
+        if (width <= 0 || height <= 0 || !clippedDrawRect.intersect(frameRect)) {
+            updateDrawRect(RectF())
+            updateTextureRect(RectF())
+            return
+        }
 
         // Texture rectangle has to account for clipped portions
         val clippedTextureRect = RectF(

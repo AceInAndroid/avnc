@@ -177,6 +177,7 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
 
         // Serialize
         val data = Container(
+                version = 2,
                 profiles = if (exportProfiles) serverProfileDao.getList() else emptyList(),
                 preferences = if (exportSettings) collectPreferences() else emptyMap()
         )
@@ -196,7 +197,8 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
         // Deserialize
         val data = serializer.decodeFromString<Container>(json)
 
-        //This is where migrations would be applied (if required in future)
+        // Version 1 backups predate streaming presets. Keep their original encoder settings.
+        if (data.version < 2) data.profiles.forEach { it.streamingPreset = "legacy" }
 
         if (data.profiles.isNotEmpty()) {
             if (deleteCurrentServers) {

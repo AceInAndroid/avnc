@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.core.view.isVisible
 import com.gaurav.avnc.R
 import com.gaurav.avnc.ui.vnc.input.InputHandler
+import com.gaurav.avnc.ui.vnc.input.ThreeFingerGesture
 import com.gaurav.avnc.vnc.PointerButton
 import kotlin.math.hypot
 import kotlin.math.max
@@ -344,6 +345,7 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
         var scrolling = false
         var endedMulti = false
         var movementOnly = false
+        lateinit var threeFinger: ThreeFingerGesture
 
         fun clearLongPress() { longPress?.let { handler.removeCallbacks(it) }; longPress = null }
         fun clearTap() { pendingTap?.let { handler.removeCallbacks(it) }; pendingTap = null }
@@ -387,6 +389,7 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
             return PointF(x / 2, y / 2)
         }
         fun cancel(cancelled: Boolean = true) {
+            threeFinger.cancel()
             clearTap(); clearLongPress(); releaseDrag()
             if (scrolling) input.onVirtualPointerScrollEnd(0f, 0f, true)
             velocity?.recycle(); velocity = null
@@ -396,13 +399,33 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
         }
         cancelSurface = { cancel() }
         surfaceMovementOnly = {
+            threeFinger.cancel()
             clearTap(); clearLongPress(); releaseDrag()
             if (scrolling) input.onVirtualPointerScrollEnd(0f, 0f, true)
             scrolling = false
             movementOnly = true
         }
 
+        threeFinger = ThreeFingerGesture(density, slop,
+                onCapture = {
+                    clearTap(); clearLongPress(); releaseDrag()
+                    input.onVirtualPointerScrollEnd(0f, 0f, true)
+                    velocity?.recycle(); velocity = null
+                    scrolling = false; endedMulti = true
+                },
+                onAction = { input.onThreeFingerAction(it) })
+
         surface.setOnTouchListener { _, e ->
+            input.onVirtualPointerMotion(e)
+            if (threeFinger.onTouchEvent(e, input.systemGesturesEnabled,
+                            scrolling || dragging || moved || endedMulti || movementOnly || heldButtons.isNotEmpty())) {
+                if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    activeSurface = false
+                    stopOwnedSession(e.actionMasked == MotionEvent.ACTION_CANCEL)
+                    parent.requestDisallowInterceptTouchEvent(false)
+                }
+                return@setOnTouchListener true
+            }
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     val now = e.eventTime

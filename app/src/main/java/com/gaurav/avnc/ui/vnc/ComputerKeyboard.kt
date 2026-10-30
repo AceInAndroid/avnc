@@ -20,6 +20,7 @@ import android.widget.ImageButton
 import android.os.Build
 import androidx.core.view.isVisible
 import com.gaurav.avnc.R
+import com.gaurav.avnc.model.RemoteAction
 import com.gaurav.avnc.ui.vnc.input.InputHandler
 import com.google.android.material.button.MaterialButton
 
@@ -110,6 +111,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         if (width == 0 || width == measuredContentWidth || content.parent != root) return
         measuredContentWidth = width
         content.layoutParams = FrameLayout.LayoutParams(width, -2, Gravity.CENTER_HORIZONTAL)
+        updateSelection()
     }
 
     fun show() {
@@ -148,6 +150,16 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
 
     fun onDisconnected() = hide()
 
+    /** Platform changes update cached keys without changing the user's keyboard visibility/page. */
+    fun onRemoteInputChanged() {
+        releaseKeys()
+        if (initialized) {
+            renderContent()
+            measuredContentWidth = 0
+            root.post { updateWidth() }
+        }
+    }
+
     fun onConfigurationChanged() {
         releaseKeys()
         // Activity handles configuration changes without recreation. The keyboard may never
@@ -173,23 +185,28 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         letterButtons.clear()
         pageButtons.clear()
         val shortcuts = row(48)
-        listOf("Ctrl" to KeyEvent.KEYCODE_CTRL_LEFT, "Alt" to KeyEvent.KEYCODE_ALT_LEFT,
-               "Win" to KeyEvent.KEYCODE_META_LEFT).forEach { (label, code) ->
-            shortcuts.addView(modifier(label, code).apply { textSize = 12f }, cell())
+        listOf(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_ALT_LEFT,
+               KeyEvent.KEYCODE_META_LEFT).forEach { code ->
+            shortcuts.addView(modifier(modifierLabel(code), code).apply { textSize = 12f }, cell())
         }
         shortcuts.addView(keyButton(Key("Tab", KeyEvent.KEYCODE_TAB)).apply { textSize = 12f }, cell())
         shortcuts.addView(keyButton(Key("Esc", KeyEvent.KEYCODE_ESCAPE)).apply { textSize = 12f }, cell())
-        headerTouchpad = style.icon(R.drawable.ic_control_touchpad, R.string.control_touchpad).apply {
-            id = R.id.keyboard_touchpad
-            setOnClickListener { activity.toolbar.toggleTouchpad() }
+        headerTouchpad = null
+        if (!activity.viewModel.remoteInputConfig.isMac) {
+            headerTouchpad = style.icon(R.drawable.ic_control_touchpad, R.string.control_touchpad).apply {
+                id = R.id.keyboard_touchpad
+                setOnClickListener { activity.toolbar.toggleTouchpad() }
+            }
+            shortcuts.addView(headerTouchpad, LinearLayout.LayoutParams(dp(48), dp(48)))
+            shortcuts.addView(style.icon(R.drawable.ic_control_more, R.string.control_more).apply {
+                id = R.id.keyboard_more; setOnClickListener { activity.toolbar.open() }
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
         }
-        shortcuts.addView(headerTouchpad, LinearLayout.LayoutParams(dp(48), dp(48)))
-        shortcuts.addView(style.icon(R.drawable.ic_control_more, R.string.control_more).apply {
-            id = R.id.keyboard_more; setOnClickListener { activity.toolbar.open() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         shortcuts.addView(style.icon(R.drawable.ic_control_chevron, R.string.computer_keyboard_close).apply {
             tag = "keyboard_close"; setOnClickListener { hide() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        if (activity.viewModel.remoteInputConfig.isMac)
+            keysArea.addView(activity.toolbar.macControls.createRow(keyboard = true), LinearLayout.LayoutParams(-1, dp(48)))
         keysArea.addView(shortcuts)
         when (page) {
             Page.Common -> {
@@ -241,6 +258,18 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                     arrows.addView(keyButton(it), cell())
                 }
                 keysArea.addView(arrows)
+                val textNavigation = row()
+                listOf(RemoteAction.LINE_START to R.string.platform_keyboard_line_start,
+                       RemoteAction.LINE_END to R.string.platform_keyboard_line_end,
+                       RemoteAction.PREVIOUS_WORD to R.string.platform_keyboard_previous_word,
+                       RemoteAction.NEXT_WORD to R.string.platform_keyboard_next_word).forEach { (action, label) ->
+                    textNavigation.addView(button(activity.getString(label)).apply {
+                        tag = "keyboard_action_${action.name.lowercase()}"
+                        textSize = 12f
+                        setOnClickListener { if (isVisible) inputHandler.onRemoteAction(action) }
+                    }, cell())
+                }
+                keysArea.addView(textNavigation)
             }
         }
         val bottom = row()
@@ -299,14 +328,8 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
             val enabled = if (code == KeyEvent.KEYCODE_CAPS_LOCK) capsLock else code in modifiers
             val locked = modifiers[code] == Modifier.Locked
             select(button, enabled)
-            val label = when (code) {
-                KeyEvent.KEYCODE_SHIFT_LEFT -> "Shift"
-                KeyEvent.KEYCODE_CTRL_LEFT -> "Ctrl"
-                KeyEvent.KEYCODE_ALT_LEFT -> "Alt"
-                KeyEvent.KEYCODE_META_LEFT -> "Win"
-                else -> "Caps"
-            }
-            button.text = if (code == KeyEvent.KEYCODE_SHIFT_LEFT) "⇧" else label
+            val label = modifierLabel(code, accessible = true)
+            button.text = if (code == KeyEvent.KEYCODE_SHIFT_LEFT) "⇧" else modifierLabel(code)
             button.icon = if (locked) androidx.appcompat.content.res.AppCompatResources.getDrawable(activity, R.drawable.ic_control_lock) else null
             button.iconSize = dp(12)
             button.iconPadding = dp(2)
@@ -336,6 +359,25 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
             button.text = label
             if (character?.isLetterOrDigit() == true || character == ',' || character == '.')
                 button.contentDescription = label
+        }
+    }
+
+    private fun modifierLabel(code: Int, accessible: Boolean = false): String {
+        if (activity.viewModel.remoteInputConfig.isMac) {
+            val compact = (measuredContentWidth.takeIf { it > 0 }?.div(activity.resources.displayMetrics.density)
+                    ?: activity.resources.configuration.screenWidthDp.toFloat()) < 600f
+            when (code) {
+                KeyEvent.KEYCODE_CTRL_LEFT -> return if (!accessible && compact) "⌃" else activity.getString(R.string.platform_keyboard_mac_control)
+                KeyEvent.KEYCODE_ALT_LEFT -> return if (!accessible && compact) "⌥" else activity.getString(R.string.platform_keyboard_mac_option)
+                KeyEvent.KEYCODE_META_LEFT -> return if (!accessible && compact) "⌘" else activity.getString(R.string.platform_keyboard_mac_command)
+            }
+        }
+        return when (code) {
+            KeyEvent.KEYCODE_SHIFT_LEFT -> "Shift"
+            KeyEvent.KEYCODE_CTRL_LEFT -> "Ctrl"
+            KeyEvent.KEYCODE_ALT_LEFT -> "Alt"
+            KeyEvent.KEYCODE_META_LEFT -> "Win"
+            else -> "Caps"
         }
     }
 

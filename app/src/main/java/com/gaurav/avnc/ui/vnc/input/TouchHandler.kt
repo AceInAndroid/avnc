@@ -51,6 +51,7 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
     private val lastTouchPoint = PointF()
     private var suppressUntilDown = false
     private var ownedDrag = false
+    private var fingerMotionCommitted = false
 
     /** Cancel detectors as well as their delayed tap/long-press callbacks. */
     fun cancel() {
@@ -66,6 +67,7 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
         } finally {
             event.recycle()
         }
+        threeFinger.cancel()
     }
 
     fun onTouchEvent(event: MotionEvent): Boolean {
@@ -73,6 +75,7 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             suppressUntilDown = false
             ownedDrag = false
+            fingerMotionCommitted = false
             handleGestureStartStop(event)
         } else if (suppressUntilDown) return true
         if (ownedDrag && event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
@@ -270,11 +273,29 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
     private val gestureDetector = GestureDetectorEx(inputView.context, FingerGestureListener(), pref)
     private val swipeVsScale = SwipeVsScale()
     private val longPressSwipeEnabled = pref.input.gesture.longPressSwipeEnabled
-    private val swipeSensitivity = pref.input.gesture.swipeSensitivity
     private val twoFingerScroll = TwoFingerScroll()
+    private val threeFinger = ThreeFingerGesture(inputView.resources.displayMetrics.density,
+            ViewConfiguration.get(inputView.context).scaledTouchSlop.toFloat(),
+            onCapture = {
+                cancelFingerDetectors()
+                dispatcher.onGestureCancel()
+            },
+            onAction = { dispatcher.onThreeFingerAction(it) })
 
+    private fun cancelFingerDetectors() {
+        val now = SystemClock.uptimeMillis()
+        MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, lastTouchPoint.x, lastTouchPoint.y, 0).let {
+            twoFingerScroll.onTouchEvent(it)
+            swipeVsScale.onTouchEvent(it)
+            scaleDetector.onTouchEvent(it)
+            gestureDetector.onTouchEvent(it)
+            it.recycle()
+        }
+    }
 
     private fun handleGestureEvent(event: MotionEvent): Boolean {
+        if (threeFinger.onTouchEvent(event, dispatcher.systemGesturesEnabled, fingerMotionCommitted || ownedDrag))
+            return true
         dispatcher.accelerator.addMovement(event)
         twoFingerScroll.onTouchEvent(event)
         swipeVsScale.onTouchEvent(event)
@@ -285,8 +306,10 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
     override fun onScaleBegin(detector: ScaleGestureDetector) = true
     override fun onScaleEnd(detector: ScaleGestureDetector) {}
     override fun onScale(detector: ScaleGestureDetector): Boolean {
-        if (swipeVsScale.shouldScale())
+        if (swipeVsScale.shouldScale()) {
+            fingerMotionCommitted = true
             dispatcher.onScale(detector.scaleFactor, detector.focusX, detector.focusY)
+        }
         return true
     }
 
@@ -337,7 +360,7 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
                                 val dx = center.x - consumed.x
                                 val dy = center.y - consumed.y
                                 if (dx != 0f || dy != 0f)
-                                    dispatcher.onSwipe2(center, center, dx * swipeSensitivity, dy * swipeSensitivity)
+                                    dispatcher.onSwipe2(center, center, dx, dy)
                                 tracker?.computeCurrentVelocity(1000,
                                         ViewConfiguration.get(inputView.context).scaledMaximumFlingVelocity.toFloat())
                                 dispatcher.onRemoteScrollEnd(tracker?.xVelocity ?: 0f, tracker?.yVelocity ?: 0f)
@@ -386,32 +409,33 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
 
 
         override fun onScroll(e1: MotionEvent, e2: MotionEvent, dx: Float, dy: Float) {
+            if (dx != 0f || dy != 0f) fingerMotionCommitted = true
             val startPoint = e1.point()
             val currentPoint = e2.point()
-            val normalizedDx = dx * swipeSensitivity
-            val normalizedDy = dy * swipeSensitivity
 
             when (e2.pointerCount) {
                 1 -> {
                     if (pref.input.gesture.swipe1.startsWith("remote-drag")) ownedDrag = true
-                    dispatcher.onSwipe1(startPoint, currentPoint, normalizedDx, normalizedDy)
+                    dispatcher.onSwipe1(startPoint, currentPoint, dx, dy)
                 }
                 2 -> if (swipeVsScale.shouldSwipe()) {
                     if (pref.input.gesture.swipe2 == "remote-scroll") {
                         val delta = twoFingerScroll.consumeDelta()
-                        dispatcher.onSwipe2(startPoint, currentPoint, delta.x * swipeSensitivity, delta.y * swipeSensitivity)
-                    } else dispatcher.onSwipe2(startPoint, currentPoint, normalizedDx, normalizedDy)
+                        dispatcher.onSwipe2(startPoint, currentPoint, delta.x, delta.y)
+                    } else dispatcher.onSwipe2(startPoint, currentPoint, dx, dy)
                 }
-                3 -> dispatcher.onSwipe3(startPoint, currentPoint, normalizedDx, normalizedDy)
+                3 -> dispatcher.onSwipe3(startPoint, currentPoint, dx, dy)
             }
         }
 
         override fun onScrollAfterLongPress(e1: MotionEvent, e2: MotionEvent, dx: Float, dy: Float) {
+            fingerMotionCommitted = true
             if (pref.input.gesture.longPressSwipe.startsWith("remote-drag")) ownedDrag = true
             dispatcher.onLongPressSwipe(e1.point(), e2.point(), dx, dy)
         }
 
         override fun onScrollAfterDoubleTap(e1: MotionEvent, e2: MotionEvent, dx: Float, dy: Float) {
+            fingerMotionCommitted = true
             if (pref.input.gesture.doubleTapSwipe.startsWith("remote-drag")) ownedDrag = true
             dispatcher.onDoubleTapSwipe(e1.point(), e2.point(), dx, dy)
         }

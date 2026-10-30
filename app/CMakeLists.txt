@@ -51,9 +51,26 @@ add_link_options("LINKER:$<$<NOT:$<CONFIG:Debug>>:--build-id=none>")
 ###############################################################################
 avnc_check_submodule(libvncserver)
 
-set(AVNC_LIBVNC_SRC_DIR ${AVNC_EXTERN_DIR}/libvncserver)
+set(AVNC_LIBVNC_SRC_DIR ${CMAKE_BINARY_DIR}/libvncserver-source)
 set(AVNC_LIBVNC_BUILD_DIR ${CMAKE_BINARY_DIR}/libvncserver)
 set(WITH_LIBSSH2 OFF CACHE BOOL "Find LibSSH" FORCE)
+
+# Keep upstream's submodule clean. Apply our tracked protocol changes to a fresh
+# build-local copy on configure, identically for every ABI and clean checkout.
+set(AVNC_LIBVNC_PATCH ${PROJECT_SOURCE_DIR}/src/main/cpp/patches/libvncclient-session.patch)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AVNC_LIBVNC_PATCH})
+file(REMOVE_RECURSE ${AVNC_LIBVNC_SRC_DIR})
+file(MAKE_DIRECTORY ${AVNC_LIBVNC_SRC_DIR})
+file(COPY ${AVNC_EXTERN_DIR}/libvncserver/ DESTINATION ${AVNC_LIBVNC_SRC_DIR}
+     PATTERN ".git" EXCLUDE)
+find_package(Git REQUIRED)
+execute_process(COMMAND ${GIT_EXECUTABLE} apply ${AVNC_LIBVNC_PATCH}
+                WORKING_DIRECTORY ${AVNC_LIBVNC_SRC_DIR}
+                RESULT_VARIABLE AVNC_LIBVNC_PATCH_RESULT
+                ERROR_VARIABLE AVNC_LIBVNC_PATCH_ERROR)
+if (NOT AVNC_LIBVNC_PATCH_RESULT EQUAL 0)
+    message(FATAL_ERROR "Cannot apply LibVNCClient session patch: ${AVNC_LIBVNC_PATCH_ERROR}")
+endif ()
 
 add_subdirectory(${AVNC_LIBVNC_SRC_DIR} ${AVNC_LIBVNC_BUILD_DIR})  # (source dir, build dir)
 
@@ -69,6 +86,8 @@ include_directories(${AVNC_LIBVNC_SRC_DIR}/include ${AVNC_LIBVNC_BUILD_DIR}/incl
 set(AVNC_NATIVE_SOURCE src/main/cpp/native-vnc.cpp)
 
 add_library(native-vnc SHARED ${AVNC_NATIVE_SOURCE})
+# NativeVNC deliberately builds without a C++ runtime (ANDROID_STL=none).
+target_compile_options(native-vnc PRIVATE -fno-exceptions -fno-rtti)
 
 target_link_libraries(native-vnc vncclient)
 

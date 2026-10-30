@@ -50,6 +50,10 @@ class VncClient(private val observer: Observer) {
         fun onCutTextReceived(text: String)
         fun onFramebufferUpdated()
         fun onFramebufferSizeChanged(width: Int, height: Int)
+        /** Screens are host-order [id, x, y, width, height] tuples; empty means unavailable. */
+        fun onDisplayLayoutChanged(width: Int, height: Int, screens: IntArray) {}
+        /** Reports completed protocol negotiation, not the server's chosen encoder. */
+        fun onStreamingPresetApplied(preset: String, success: Boolean) {}
         fun onPointerMoved(x: Int, y: Int)
         fun onBell()
     }
@@ -176,6 +180,11 @@ class VncClient(private val observer: Observer) {
     /**
      * Name of remote desktop
      */
+    fun isAppleServer(): Boolean {
+        ifConnected { return nativeIsAppleServer(nativePtr) }
+        return false
+    }
+
     fun getDesktopName(): String {
         ifConnected {
             return nativeGetDesktopName(nativePtr)
@@ -250,6 +259,23 @@ class VncClient(private val observer: Observer) {
             nativeSetDesktopSize(nativePtr, width, height)
     }
 
+    /** Selects a framebuffer region without changing remote display configuration.
+     * Non-positive dimensions restore updates for the entire desktop. */
+    fun setDesktopRegion(x: Int, y: Int, width: Int, height: Int) = ifConnected {
+        nativeSetDesktopRegion(nativePtr, x, y, width, height)
+    }
+
+    /** Queues an encoding change for the next complete-message boundary.
+     * May be called before connecting. The observer receives the applied result. */
+    fun setStreamingPreset(preset: String): Boolean {
+        if (preset !in setOf("legacy", "smooth", "hd")) return false
+        stateLock.tryRead {
+            if (!destroyed)
+                return nativeSetStreamingPreset(nativePtr, preset)
+        }
+        return false
+    }
+
     fun setInputDisabled(disabled: Boolean) {
         inputDisabled.set(disabled)
     }
@@ -265,7 +291,7 @@ class VncClient(private val observer: Observer) {
     /**
      * Change framebuffer update status.
      * If paused, client will effectively stop asking for framebuffer updates from server.
-     * This will do network IO when resuming, so must not be called from Main thread.
+     * Resuming queues a refresh for the receiver thread.
      */
     fun setFrameBufferUpdatesPaused(pause: Boolean) {
         stateLock.read {
@@ -354,9 +380,12 @@ class VncClient(private val observer: Observer) {
     private external fun nativeSendCutText(clientPtr: Long, bytes: ByteArray, isUTF8: Boolean): Boolean
     private external fun nativeIsUTF8CutTextSupported(clientPtr: Long): Boolean
     private external fun nativeSetDesktopSize(clientPtr: Long, width: Int, height: Int): Boolean
+    private external fun nativeSetDesktopRegion(clientPtr: Long, x: Int, y: Int, width: Int, height: Int)
+    private external fun nativeSetStreamingPreset(clientPtr: Long, preset: String): Boolean
     private external fun nativeRefreshFrameBuffer(clientPtr: Long): Boolean
     private external fun nativePauseFramebufferUpdates(clientPtr: Long, pause: Boolean)
     private external fun nativeGetDesktopName(clientPtr: Long): String
+    private external fun nativeIsAppleServer(clientPtr: Long): Boolean
     private external fun nativeGetWidth(clientPtr: Long): Int
     private external fun nativeGetHeight(clientPtr: Long): Int
     private external fun nativeIsEncrypted(clientPtr: Long): Boolean
@@ -395,6 +424,14 @@ class VncClient(private val observer: Observer) {
 
     @Keep
     private fun cbFramebufferSizeChanged(w: Int, h: Int) = observer.onFramebufferSizeChanged(w, h)
+
+    @Keep
+    private fun cbDisplayLayoutChanged(w: Int, h: Int, screens: IntArray) =
+        observer.onDisplayLayoutChanged(w, h, screens)
+
+    @Keep
+    private fun cbStreamingPresetApplied(preset: String, success: Boolean) =
+        observer.onStreamingPresetApplied(preset, success)
 
 
     @Keep

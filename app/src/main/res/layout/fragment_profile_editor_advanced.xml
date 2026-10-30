@@ -233,6 +233,18 @@
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintTop_toBottomOf="@id/button_up_delay" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/remote_input_settings"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="16dp"
+                        android:minHeight="48dp"
+                        android:text="@string/remote_input_title"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toBottomOf="@id/resize_remote_desktop" />
+
                     <!--Image Quality-->
                     <TextView
                         android:id="@+id/image_quality_label"
@@ -257,7 +269,7 @@
                         android:progress="@={viewModel.profile.imageQuality}"
                         app:layout_constraintEnd_toStartOf="@id/raw_encoding"
                         app:layout_constraintStart_toEndOf="@id/image_quality_label"
-                        app:layout_constraintTop_toBottomOf="@id/resize_remote_desktop" />
+                        app:layout_constraintTop_toBottomOf="@id/remote_input_settings" />
 
                     <CheckBox
                         android:id="@+id/raw_encoding"

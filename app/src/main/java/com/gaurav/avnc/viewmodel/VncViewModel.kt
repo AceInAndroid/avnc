@@ -11,6 +11,11 @@ package com.gaurav.avnc.viewmodel
 import android.app.Application
 import android.content.pm.ActivityInfo
 import android.graphics.RectF
+import android.graphics.PointF
+import com.gaurav.avnc.model.RemoteDisplay
+import com.gaurav.avnc.model.RemoteDisplayLayout
+import com.gaurav.avnc.model.DisplayViewMode
+import com.gaurav.avnc.model.StreamingPreset
 import android.media.ToneGenerator
 import android.util.Log
 import android.widget.Toast
@@ -108,6 +113,133 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
     }
 
     lateinit var profile: ServerProfile
+
+    val remoteInputPreferences by lazy { com.gaurav.avnc.util.RemoteInputPreferences(app) }
+    var remoteInputConfig = com.gaurav.avnc.model.RemoteInputConfig()
+        private set
+
+    fun refreshRemoteInputConfig() {
+        remoteInputConfig = remoteInputPreferences.resolve(profile, client?.isAppleServer() == true)
+        applyDisplayViewport()
+    }
+
+    val displayLayout = MutableLiveData(RemoteDisplayLayout())
+    val streamingPreset = MutableLiveData(StreamingPreset.LEGACY)
+    val streamingPresetPending = MutableLiveData(false)
+    val streamingPresetFailed = MutableLiveData(false)
+    val viewerSettingsVersion = MutableLiveData(0)
+    // Observed synchronously on the UI thread before changing coordinate spaces.
+    val viewportWillChange = MutableLiveData(0)
+    val displayViewMode get() = if (::profile.isInitialized) DisplayViewMode.from(profile.displayViewMode) else DisplayViewMode.SINGLE
+    val selectedDisplay: RemoteDisplay? get() = if (remoteInputConfig.isMac && displayViewMode == DisplayViewMode.SINGLE)
+        displayLayout.value?.displays?.firstOrNull { it.id == profile.selectedDisplayId } else null
+    private data class DisplayView(val zoom1: Float, val zoom2: Float, val x: Float, val y: Float)
+    private val displayViews = mutableMapOf<String, DisplayView>()
+    private val displayPointers = mutableMapOf<String, PointF>()
+    private var activeDisplayKey = "all"
+
+    private fun settingsChanged() { viewerSettingsVersion.value = (viewerSettingsVersion.value ?: 0) + 1 }
+    private fun prepareViewportChange() {
+        viewportWillChange.value = (viewportWillChange.value ?: 0) + 1
+        frameScroller.stop()
+        frameState.let { displayViews[activeDisplayKey] = DisplayView(it.zoomScale1, it.zoomScale2, it.frameX, it.frameY) }
+        client?.let { displayPointers[activeDisplayKey] = PointF(it.pointerX.toFloat(), it.pointerY.toFloat()) }
+    }
+
+    private fun applyDisplayViewport() {
+        if (!::profile.isInitialized) return
+        prepareViewportChange()
+        val display = selectedDisplay
+        val key = display?.id ?: "all"
+        val changed = key != activeDisplayKey || frameState.contentRect != (display?.bounds ?: RectF(0f, 0f, frameState.fbWidth, frameState.fbHeight))
+        if (changed) {
+            frameState.setZoom(profile.zoom1, profile.zoom2)
+            frameState.setContentRect(display?.bounds)
+            displayViews[key]?.let {
+                frameState.setZoom(it.zoom1, it.zoom2)
+                frameState.moveTo(it.x, it.y)
+            }
+            activeDisplayKey = key
+        }
+        if (display == null) messenger?.setDesktopRegion(0, 0, 0, 0)
+        else messenger?.setDesktopRegion(display.x, display.y, display.width, display.height)
+        settingsChanged()
+        refreshFrameView()
+    }
+
+    fun selectDisplay(id: String): PointF? {
+        val display = displayLayout.value?.displays?.firstOrNull { it.id == id } ?: return null
+        if (!remoteInputConfig.isMac) return null
+        profile.displayViewMode = DisplayViewMode.SINGLE.id
+        profile.selectedDisplayId = id
+        applyDisplayViewport()
+        saveProfile()
+        val previous = displayPointers[id]
+        val rect = display.bounds
+        return PointF((previous?.x ?: rect.centerX()).coerceIn(rect.left, rect.right - 1),
+                      (previous?.y ?: rect.centerY()).coerceIn(rect.top, rect.bottom - 1))
+    }
+
+    fun setDisplayViewMode(mode: DisplayViewMode) {
+        profile.displayViewMode = mode.id
+        ensureDisplaySelection()
+        applyDisplayViewport()
+        saveProfile()
+    }
+
+    private fun ensureDisplaySelection() {
+        val displays = displayLayout.value?.displays.orEmpty()
+        if (displays.isEmpty()) return // EDS often arrives after the initial framebuffer-size callback.
+        if (displays.none { it.id == profile.selectedDisplayId }) {
+            profile.selectedDisplayId = displays.firstOrNull { it.contains(client?.pointerX ?: -1, client?.pointerY ?: -1) }?.id
+                    ?: displays.firstOrNull()?.id.orEmpty()
+        }
+    }
+
+    fun saveManualDisplayLayout(layout: RemoteDisplayLayout) {
+        if (!layout.isValid() || layout.framebufferWidth != frameState.fbWidth.toInt() || layout.framebufferHeight != frameState.fbHeight.toInt()) return
+        val manual = layout.copy(source = "manual")
+        profile.manualDisplayLayout = manual.encode()
+        displayViews.clear()
+        displayPointers.clear()
+        displayLayout.value = manual
+        ensureDisplaySelection()
+        applyDisplayViewport()
+        saveProfile()
+    }
+
+    private fun updateDisplayLayout(protocol: RemoteDisplayLayout) {
+        val saved = RemoteDisplayLayout.decode(profile.manualDisplayLayout)
+        val manualExists = saved.isValid()
+        val manualFits = manualExists && saved.source != "manual_invalid" && saved.framebufferWidth == protocol.framebufferWidth && saved.framebufferHeight == protocol.framebufferHeight
+        if (manualExists && !manualFits && saved.source != "manual_invalid")
+            profile.manualDisplayLayout = saved.copy(source = "manual_invalid").encode()
+        displayLayout.value = when {
+            protocol.isValid() -> protocol
+            manualFits -> saved.copy(source = "manual")
+            manualExists -> protocol.copy(source = "manual_invalid")
+            else -> protocol
+        }
+        ensureDisplaySelection()
+        applyDisplayViewport()
+        saveProfile()
+    }
+
+    fun setStreamingPreset(preset: StreamingPreset) {
+        profile.streamingPreset = preset.id
+        streamingPresetPending.value = connected && messenger != null
+        streamingPresetFailed.value = false
+        messenger?.setStreamingPreset(preset.id)
+        saveProfile()
+        settingsChanged()
+    }
+
+    fun setDockActivation(method: String) {
+        if (method !in listOf("shortcut", "bottom", "left", "right")) return
+        profile.dockActivation = method
+        saveProfile()
+        settingsChanged()
+    }
 
     /**
      * Live version of [profile], allows easier access from UI layer
@@ -234,6 +366,8 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
     fun initConnection(profile: ServerProfile) {
         if (state.value == State.Created) {
             this.profile = profile
+            streamingPreset.value = StreamingPreset.from(profile.streamingPreset)
+            streamingPresetPending.value = true
             profileLive.value = profile
             state.value = State.Connecting
             frameState.setZoom(profile.zoom1, profile.zoom2)
@@ -351,7 +485,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
      * In portrait mode, safe area is used instead of window to exclude the keyboard.
      */
     fun resizeRemoteDesktop() {
-        if (connected && profile.resizeRemoteDesktop && !videoDisabled)
+        if (connected && profile.resizeRemoteDesktop && !videoDisabled && !remoteInputConfig.isMac)
             frameState.let {
                 if (it.windowWidth > it.windowHeight)
                     messenger?.setDesktopSize(it.windowWidth.toInt(), it.windowHeight.toInt())
@@ -454,6 +588,9 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
             launchMain {
                 this@VncViewModel.client = vncClient
                 this@VncViewModel.messenger = messenger
+                refreshRemoteInputConfig()
+                ensureDisplaySelection()
+                applyDisplayViewport()
                 state.value = State.Connected
 
                 rememberLoginInfo()
@@ -468,6 +605,9 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
             // Block until main thread is synchronised with disconnected state
             runBlocking(Dispatchers.Main) {
                 state.value = State.Disconnected
+                displayPointers.clear()
+                displayViews.clear()
+                streamingPresetPending.value = false
                 client = null
                 messenger = null
             }
@@ -520,7 +660,28 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
         override fun onFramebufferSizeChanged(width: Int, height: Int) {
             launchMain {
+                prepareViewportChange()
                 frameState.setFramebufferSize(width.toFloat(), height.toFloat())
+                val current = displayLayout.value
+                if (current?.framebufferWidth != width || current.framebufferHeight != height)
+                    updateDisplayLayout(RemoteDisplayLayout(width, height))
+                refreshFrameView()
+            }
+        }
+
+        override fun onDisplayLayoutChanged(width: Int, height: Int, screens: IntArray) {
+            val layout = RemoteDisplayLayout.fromProtocol(width, height, screens)
+            launchMain { updateDisplayLayout(layout) }
+        }
+
+        override fun onStreamingPresetApplied(preset: String, success: Boolean) {
+            launchMain {
+                if (preset == profile.streamingPreset) {
+                    streamingPresetPending.value = false
+                    streamingPresetFailed.value = !success
+                    if (success) streamingPreset.value = StreamingPreset.from(preset)
+                    settingsChanged()
+                }
             }
         }
 

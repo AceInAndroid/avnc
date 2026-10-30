@@ -85,6 +85,14 @@
                 android:hint="@string/hint_password"
                 android:inputType="textPassword"
                 android:text="@={profile.password}" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/remote_input_settings"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/remote_input_title" />
         </LinearLayout>
     </ScrollView>
 </layout>

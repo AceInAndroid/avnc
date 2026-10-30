@@ -45,6 +45,95 @@ struct JniContext {
 
 static JniContext context{};
 
+static const char *presetName(int preset) {
+    return preset == 1 ? "smooth" : preset == 2 ? "hd" : "legacy";
+}
+
+static void notifyStreamingPreset(rfbClient *client, int preset, bool success) {
+    auto env = context.getEnv();
+    auto name = env->NewStringUTF(presetName(preset));
+    if (!name) return;
+    auto mid = env->GetMethodID(context.managedCls, "cbStreamingPresetApplied", "(Ljava/lang/String;Z)V");
+    env->CallVoidMethod(getManagedClient(client), mid, name, success);
+    env->DeleteLocalRef(name);
+}
+
+static void configureEncodingPreferences(rfbClient *client) {
+    auto ex = getClientExtension(client);
+    client->appData.enableJPEG = ex->activePreset == 0 ? ex->legacyJPEG : TRUE;
+    client->appData.qualityLevel = ex->activePreset == 1 ? 3
+                                   : ex->activePreset == 2 ? 9 : ex->legacyQuality;
+    client->appData.compressLevel = ex->activePreset == 1 ? 1
+                                    : ex->activePreset == 2 ? 6 : ex->legacyCompression;
+    if (ex->activePreset == 1)
+        client->appData.encodingsString = "tight zrle hextile raw";
+    else if (ex->activePreset == 2)
+        client->appData.encodingsString = "zrle tight hextile raw";
+    else if (!client->isUpdateRectManagedByLib && !ex->legacyEncodings)
+        // CopyRect can refer to stale pixels outside the requested monitor.
+        client->appData.encodingsString = "tight hextile zlib zrle zywrle ultra corre rre raw";
+    else
+        client->appData.encodingsString = ex->legacyEncodings;
+}
+
+/** Only called by the receiver, between complete RFB server messages. */
+static bool applyPendingSessionSettings(rfbClient *client) {
+    auto ex = getClientExtension(client);
+    int preset, x, y, width, height, desktopWidth, desktopHeight;
+    bool region, refresh;
+    {
+        ScopedMutexLock lock(ex->settingsMutex);
+        preset = ex->pendingPreset;
+        region = ex->pendingRegion;
+        refresh = ex->pendingRefresh;
+        x = ex->regionX;
+        y = ex->regionY;
+        width = ex->regionWidth;
+        height = ex->regionHeight;
+        desktopWidth = ex->desktopWidth;
+        desktopHeight = ex->desktopHeight;
+        ex->pendingPreset = -1;
+        ex->pendingRegion = ex->pendingRefresh = false;
+        ex->desktopWidth = ex->desktopHeight = 0;
+    }
+
+    if (preset < 0 && !region && !refresh && desktopWidth <= 0)
+        return true;
+
+    const bool wasCropped = !client->isUpdateRectManagedByLib;
+    if (region) {
+        if (width <= 0 || height <= 0 ||
+            (x <= 0 && y <= 0 && width >= client->width && height >= client->height)) {
+            rfbClientSetUpdateRect(client, nullptr);
+        } else {
+            x = x < 0 ? 0 : x >= client->width ? client->width - 1 : x;
+            y = y < 0 ? 0 : y >= client->height ? client->height - 1 : y;
+            rfbRectangle rect{static_cast<uint16_t>(x), static_cast<uint16_t>(y),
+                              static_cast<uint16_t>(width < client->width - x ? width : client->width - x),
+                              static_cast<uint16_t>(height < client->height - y ? height : client->height - y)};
+            rfbClientSetUpdateRect(client, &rect);
+        }
+    }
+    if (preset >= 0)
+        ex->activePreset = preset;
+
+    bool success = true;
+    if (preset >= 0 || wasCropped != !client->isUpdateRectManagedByLib) {
+        // Decoder quality fields are mutable; rebuild them from desired settings.
+        configureEncodingPreferences(client);
+        success = SetFormatAndEncodings(client);
+    }
+    if (success && desktopWidth > 0)
+        success = SendExtDesktopSize(client, desktopWidth, desktopHeight);
+    if (success && !client->pauseFramebufferUpdates) {
+        success = SendFramebufferUpdateRequest(client, client->updateRect.x, client->updateRect.y,
+                                                client->updateRect.w, client->updateRect.h, FALSE);
+    }
+    if (preset >= 0)
+        notifyStreamingPreset(client, preset, success);
+    return success;
+}
+
 /**
  * Called when our library is loaded.
  */
@@ -209,6 +298,26 @@ static void onFinishedFrameBufferUpdate(rfbClient *client) {
     env->CallVoidMethod(obj, context.cbFramebufferUpdated);
 }
 
+static void onDesktopLayout(rfbClient *client, int width, int height, int count,
+                            const rfbExtDesktopScreen *screens) {
+    auto env = context.getEnv();
+    auto values = env->NewIntArray(count * 5);
+    if (!values) return;
+    jint tuples[255 * 5];
+    for (int i = 0; i < count; ++i) {
+        tuples[i * 5] = static_cast<jint>(screens[i].id);
+        tuples[i * 5 + 1] = screens[i].x;
+        tuples[i * 5 + 2] = screens[i].y;
+        tuples[i * 5 + 3] = screens[i].width;
+        tuples[i * 5 + 4] = screens[i].height;
+    }
+    if (count > 0)
+        env->SetIntArrayRegion(values, 0, count * 5, tuples);
+    auto mid = env->GetMethodID(context.managedCls, "cbDisplayLayoutChanged", "(II[I)V");
+    env->CallVoidMethod(getManagedClient(client), mid, width, height, values);
+    env->DeleteLocalRef(values);
+}
+
 /**
  * We need to use our own allocator to know when frame size has changed.
  * and to acquire framebuffer lock during modification.
@@ -217,6 +326,8 @@ static rfbBool onMallocFrameBuffer(rfbClient *client) {
 
     const auto width = client->width;
     const auto height = client->height;
+    if (width <= 0 || height <= 0)
+        return FALSE;
     const auto requestedSize = (uint64_t) width * height * client->format.bitsPerPixel / 8;
 
     if (requestedSize >= SIZE_MAX) {
@@ -290,6 +401,9 @@ static void setCallbacks(rfbClient *client) {
     client->FinishedFrameBufferUpdate = onFinishedFrameBufferUpdate;
     client->MallocFrameBuffer = onMallocFrameBuffer;
     client->GotCursorShape = onGotCursorShape;
+    client->GotDesktopLayout = onDesktopLayout;
+    client->LockWriteToServer = [](rfbClient *c) { pthread_mutex_lock(&getClientExtension(c)->writeMutex); };
+    client->UnlockWriteToServer = [](rfbClient *c) { pthread_mutex_unlock(&getClientExtension(c)->writeMutex); };
 }
 
 
@@ -305,8 +419,10 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeClientCreate(JNIEnv *env, jobject thiz)
         return 0;
 
     auto ex = assignClientExtension(client);
-    if (!ex)
+    if (!ex) {
+        rfbClientCleanup(client);
         return 0;
+    }
 
     setCallbacks(client);
     client->canHandleNewFBSize = TRUE;
@@ -339,6 +455,12 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*t
     client->appData.qualityLevel = image_quality;
     if (use_raw_encoding)
         client->appData.encodingsString = "raw";
+
+    auto ex = getClientExtension(client);
+    ex->legacyQuality = image_quality;
+    ex->legacyCompression = client->appData.compressLevel;
+    ex->legacyJPEG = client->appData.enableJPEG;
+    ex->legacyEncodings = client->appData.encodingsString;
 
     // Change pixel format to match with the default format used by most VNC
     // servers. Technically, we should not have to this as VNC servers have to
@@ -391,6 +513,8 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeCleanup(JNIEnv *env, jobject /*thiz*/,
     auto managedClient = getManagedClient(client);
     env->DeleteGlobalRef(managedClient);
 
+    client->LockWriteToServer = nullptr;
+    client->UnlockWriteToServer = nullptr;
     freeClientExtension(client);
     rfbClientCleanup(client);
 }
@@ -401,7 +525,10 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeProcessServerMessage(JNIEnv * /*env*/, 
                                                               jlong client_ptr) {
     auto client = (rfbClient *) client_ptr;
 
-    auto waitResult = WaitForMessage(client, 1000000);
+    if (!applyPendingSessionSettings(client))
+        return JNI_FALSE;
+
+    auto waitResult = WaitForMessage(client, 100000);
 
     if (waitResult == 0) // Timeout
         return JNI_TRUE;
@@ -473,14 +600,49 @@ extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeSetDesktopSize(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                         jint width, jint height) {
-    return (jboolean) SendExtDesktopSize((rfbClient *) client_ptr, width, height);
+    auto ex = getClientExtension((rfbClient *) client_ptr);
+    ScopedMutexLock lock(ex->settingsMutex);
+    ex->desktopWidth = width;
+    ex->desktopHeight = height;
+    return JNI_TRUE;
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_gaurav_avnc_vnc_VncClient_nativeSetDesktopRegion(JNIEnv *, jobject, jlong client_ptr,
+                                                          jint x, jint y, jint width, jint height) {
+    auto ex = getClientExtension((rfbClient *) client_ptr);
+    ScopedMutexLock lock(ex->settingsMutex);
+    ex->regionX = x;
+    ex->regionY = y;
+    ex->regionWidth = width;
+    ex->regionHeight = height;
+    ex->pendingRegion = true;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_gaurav_avnc_vnc_VncClient_nativeSetStreamingPreset(JNIEnv *env, jobject, jlong client_ptr,
+                                                            jstring preset) {
+    auto value = env->GetStringUTFChars(preset, nullptr);
+    if (!value) return JNI_FALSE;
+    int id = strcmp(value, "legacy") == 0 ? 0 : strcmp(value, "smooth") == 0 ? 1
+                                               : strcmp(value, "hd") == 0 ? 2 : -1;
+    env->ReleaseStringUTFChars(preset, value);
+    if (id < 0) return JNI_FALSE;
+    auto ex = getClientExtension((rfbClient *) client_ptr);
+    ScopedMutexLock lock(ex->settingsMutex);
+    ex->pendingPreset = id;
+    return JNI_TRUE;
 }
 
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeRefreshFrameBuffer(JNIEnv * /*env*/, jobject /*thiz*/, jlong clientPtr) {
-    auto client = (rfbClient *) clientPtr;
-    return (jboolean) SendFramebufferUpdateRequest(client, 0, 0, client->width, client->height, TRUE);
+    auto ex = getClientExtension((rfbClient *) clientPtr);
+    ScopedMutexLock lock(ex->settingsMutex);
+    ex->pendingRefresh = true;
+    return JNI_TRUE;
 }
 
 extern "C"
@@ -495,6 +657,13 @@ JNIEXPORT jstring JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeGetDesktopName(JNIEnv *env, jobject /*thiz*/, jlong client_ptr) {
     auto client = (rfbClient *) client_ptr;
     return env->NewStringUTF(client->desktopName ? client->desktopName : "");
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_gaurav_avnc_vnc_VncClient_nativeIsAppleServer(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr) {
+    auto client = (rfbClient *) client_ptr;
+    return client->serverMajor == 3 && client->serverMinor == 889;
 }
 
 extern "C"

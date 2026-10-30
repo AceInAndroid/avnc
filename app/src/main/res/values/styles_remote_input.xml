@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ThemeOverlay.RemoteInput" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorPrimary">@color/viewer_blue</item>
+        <item name="colorControlActivated">@color/viewer_blue</item>
+    </style>
+</resources>

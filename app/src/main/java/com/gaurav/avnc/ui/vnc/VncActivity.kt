@@ -120,6 +120,7 @@ class VncActivity : AppCompatActivity() {
         viewModel.state.observe(this) { onClientStateChanged(it) }
         viewModel.profileLive.observe(this) { onProfileUpdated() }
         viewModel.capturePointer.observe(this) { updatePointerCapture(it) }
+        viewModel.viewportWillChange.observe(this) { releaseInputControls() }
 
         hasActivityRestarted = savedInstanceState != null
         oldState = (savedInstanceState ?: intent.extras)?.let {
@@ -131,6 +132,13 @@ class VncActivity : AppCompatActivity() {
         super.onStart()
         binding.frameView.onResume()
         onStartTime = SystemClock.uptimeMillis()
+        if (viewModel.connected) {
+            val old = viewModel.remoteInputConfig
+            releaseInputControls()
+            viewModel.refreshRemoteInputConfig()
+            inputHandler.onRemoteConfigChanged()
+            if (old != viewModel.remoteInputConfig) computerKeyboard.onRemoteInputChanged()
+        }
 
         // Refresh framebuffer on activity restart:
         // - It forces read/write on the socket. This allows us to verify the socket, which might have
@@ -534,6 +542,40 @@ class VncActivity : AppCompatActivity() {
         floatingTouchpad.cancel()
         inputHandler.cancelInput()
     }
+
+    fun applyRemoteInputSettings() {
+        releaseInputControls()
+        viewModel.refreshRemoteInputConfig()
+        viewModel.saveProfile()
+        inputHandler.onRemoteConfigChanged()
+        computerKeyboard.onRemoteInputChanged()
+    }
+
+    fun selectDisplay(id: String) {
+        releaseInputControls()
+        viewModel.selectDisplay(id)?.let { inputHandler.onAbsolutePointerMove(it) }
+    }
+
+    fun setDisplayViewMode(mode: com.gaurav.avnc.model.DisplayViewMode) {
+        releaseInputControls()
+        viewModel.setDisplayViewMode(mode)
+    }
+
+    fun saveManualDisplayLayout(layout: com.gaurav.avnc.model.RemoteDisplayLayout) {
+        releaseInputControls()
+        viewModel.saveManualDisplayLayout(layout)
+    }
+
+    fun setStreamingPreset(preset: com.gaurav.avnc.model.StreamingPreset) {
+        releaseInputControls()
+        viewModel.setStreamingPreset(preset)
+    }
+
+    fun setDockActivation(method: String) = viewModel.setDockActivation(method)
+    fun performMacDock() = inputHandler.onMacDock()
+
+    fun performRemoteAction(action: com.gaurav.avnc.model.RemoteAction) = inputHandler.onRemoteAction(action)
+    fun performThreeFingerAction(direction: String) = inputHandler.onThreeFingerAction(direction)
 
     private fun updatePointerCapture(capturePointer: Boolean) {
         if (Build.VERSION.SDK_INT < 26)

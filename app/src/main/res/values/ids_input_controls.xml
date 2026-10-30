@@ -16,4 +16,9 @@
     <item name="keyboard_touchpad" type="id" />
     <item name="keyboard_more" type="id" />
     <item name="open_toolbar_btn" type="id" />
+    <item name="mac_controls_row" type="id" />
+    <item name="mac_dock" type="id" />
+    <item name="mac_mission_control" type="id" />
+    <item name="mac_displays" type="id" />
+    <item name="mac_quality" type="id" />
 </resources>

@@ -10,7 +10,20 @@
 #define AVNC_CLIENTEX_H
 
 #include <jni.h>
+#include <pthread.h>
 #include "Cursor.h"
+
+// This target deliberately uses ANDROID_STL=none.
+class ScopedMutexLock {
+    pthread_mutex_t *mutex;
+public:
+    explicit ScopedMutexLock(pthread_mutex_t &value) : mutex(&value) {
+        pthread_mutex_lock(mutex);
+    }
+    ~ScopedMutexLock() { pthread_mutex_unlock(mutex); }
+    ScopedMutexLock(const ScopedMutexLock &) = delete;
+    ScopedMutexLock &operator=(const ScopedMutexLock &) = delete;
+};
 
 /**
  * We attach some additional data to every rfbClient.
@@ -32,6 +45,20 @@ struct ClientEx {
 
     // Protects modification to framebuffer & cursor
     MUTEX(mutex);
+
+    // Network output is serialized independently from framebuffer decoding.
+    pthread_mutex_t writeMutex;
+    pthread_mutex_t settingsMutex;
+    int legacyQuality;
+    int legacyCompression;
+    bool legacyJPEG;
+    const char *legacyEncodings;
+    int activePreset; // 0: legacy, 1: smooth, 2: hd
+    int pendingPreset;
+    bool pendingRegion;
+    int regionX, regionY, regionWidth, regionHeight;
+    bool pendingRefresh;
+    int desktopWidth, desktopHeight;
 };
 
 const int ClientExTag = 1;
@@ -62,12 +89,31 @@ void setManagedClient(rfbClient *client, jobject managedClient) {
  * Create new ClientEx and assign it to given client.
  */
 ClientEx *assignClientExtension(rfbClient *client) {
-    auto ex = (ClientEx *) malloc(sizeof(ClientEx));
-    if (ex) {
-        INIT_MUTEX(ex->mutex);
-        ex->cursor = nullptr;
-        setClientExtension(client, ex);
+    auto ex = (ClientEx *) calloc(1, sizeof(ClientEx));
+    if (!ex) return nullptr;
+    pthread_mutexattr_t attributes;
+    if (pthread_mutexattr_init(&attributes) != 0) {
+        free(ex);
+        return nullptr;
     }
+    const int recursiveResult = pthread_mutexattr_settype(&attributes, PTHREAD_MUTEX_RECURSIVE);
+    const int writeResult = recursiveResult == 0 ? pthread_mutex_init(&ex->writeMutex, &attributes) : recursiveResult;
+    pthread_mutexattr_destroy(&attributes);
+    if (writeResult != 0) {
+        free(ex);
+        return nullptr;
+    }
+    if (pthread_mutex_init(&ex->settingsMutex, nullptr) != 0) {
+        pthread_mutex_destroy(&ex->writeMutex);
+        free(ex);
+        return nullptr;
+    }
+    INIT_MUTEX(ex->mutex);
+    ex->legacyQuality = 5;
+    ex->legacyCompression = 1;
+    ex->legacyJPEG = true;
+    ex->pendingPreset = -1;
+    setClientExtension(client, ex);
     return ex;
 }
 
@@ -78,6 +124,8 @@ void freeClientExtension(rfbClient *client) {
     auto ex = getClientExtension(client);
     if (ex) {
         TINI_MUTEX(ex->mutex);
+        pthread_mutex_destroy(&ex->settingsMutex);
+        pthread_mutex_destroy(&ex->writeMutex);
         freeCursor(ex->cursor);
         free(ex);
         setClientExtension(client, nullptr);

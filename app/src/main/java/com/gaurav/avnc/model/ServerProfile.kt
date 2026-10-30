@@ -117,6 +117,28 @@ data class ServerProfile(
          */
         var serverTypeHint: String = "",
 
+        @ColumnInfo(defaultValue = "'auto'")
+        var remotePlatform: String = "auto",
+
+        @ColumnInfo(defaultValue = "'{}'")
+        var remoteInputOverrides: String = "{}",
+
+        @ColumnInfo(defaultValue = "'single'")
+        var displayViewMode: String = "single",
+
+        @ColumnInfo(defaultValue = "''")
+        var selectedDisplayId: String = "",
+
+        @ColumnInfo(defaultValue = "'{}'")
+        var manualDisplayLayout: String = "{}",
+
+        // Existing profiles keep their previous encoding settings during migration.
+        @ColumnInfo(defaultValue = "'legacy'")
+        var streamingPreset: String = "smooth",
+
+        @ColumnInfo(defaultValue = "'shortcut'")
+        var dockActivation: String = "shortcut",
+
         /**
          * Composite field for various flags.
          * This is accessed via individual members like [fZoomLocked].

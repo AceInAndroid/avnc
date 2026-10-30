@@ -25,7 +25,6 @@ abstract class BasePointerMode(val viewModel: VncViewModel) {
     private var accumulatedDx = 0F
     private var accumulatedDy = 0F
     private val deltaPerScroll = 20F //For how much dx/dy, one scroll event will be sent
-    private val yScrollDirection = (if (viewModel.pref.input.gesture.invertVerticalScrolling) -1 else 1)
 
     abstract fun transformPoint(p: PointF): PointF?
     abstract fun doMovePointer(p: PointF, dx: Float, dy: Float)
@@ -69,8 +68,9 @@ abstract class BasePointerMode(val viewModel: VncViewModel) {
     }
 
     fun doRemoteScroll(focus: PointF, dx: Float, dy: Float) {
-        accumulatedDx += dx
-        accumulatedDy += dy * yScrollDirection
+        val config = viewModel.remoteInputConfig
+        accumulatedDx += dx * config.effectiveHorizontalSpeed * if (config.invertHorizontal) -1 else 1
+        accumulatedDy += dy * config.scrollSpeed * if (config.invertVertical) -1 else 1
 
         //Drain horizontal change
         while (abs(accumulatedDx) >= deltaPerScroll) {
@@ -132,8 +132,8 @@ class DirectPointerMode(viewModel: VncViewModel) : BasePointerMode(viewModel) {
 
         return fs.toVP(
                 fs.toFbUnchecked(p).apply {
-                    x = x.coerceIn(0f, fs.fbWidth - 1)
-                    y = y.coerceIn(0f, fs.fbHeight - 1)
+                    x = x.coerceIn(fs.contentRect.left, fs.contentRect.right - 1)
+                    y = y.coerceIn(fs.contentRect.top, fs.contentRect.bottom - 1)
                 }
         )
     }
@@ -162,14 +162,30 @@ class RelativePointerMode(viewModel: VncViewModel, private val accelerator: Poin
         viewModel.client?.ignorePointerMovesByServer = false
     }
 
-    override fun transformPoint(p: PointF) = pointerPosition
+    override fun transformPoint(p: PointF): PointF? {
+        val bounds = viewModel.frameState.contentRect
+        if (bounds.width() < 1 || bounds.height() < 1) return null
+        pointerPosition.x = pointerPosition.x.coerceIn(bounds.left, bounds.right - 1)
+        pointerPosition.y = pointerPosition.y.coerceIn(bounds.top, bounds.bottom - 1)
+        return pointerPosition
+    }
 
-    override fun doMovePointer(p: PointF, dx: Float, dy: Float) = doMovePointer(dx, dy, true)
+    override fun doMovePointer(p: PointF, dx: Float, dy: Float) {
+        val density = viewModel.getApplication<android.app.Application>().resources.displayMetrics.density
+        doTouchMove(dx / density, dy / density)
+    }
+
+    fun doTouchMove(dxDp: Float, dyDp: Float) {
+        val config = viewModel.remoteInputConfig
+        val shouldAccelerate = config.acceleration && viewModel.messenger?.hasPressedPointerButtons != true
+        doMovePointer(dxDp * 3f * config.pointerSpeed, dyDp * 3f * config.pointerSpeed, shouldAccelerate)
+    }
 
     fun doMovePointer(dx: Float, dy: Float, accelerate: Boolean) {
-        val xLimit = viewModel.frameState.fbWidth - 1
-        val yLimit = viewModel.frameState.fbHeight - 1
-        if (xLimit < 0 || yLimit < 0)
+        val bounds = viewModel.frameState.contentRect
+        val xLimit = bounds.right - 1
+        val yLimit = bounds.bottom - 1
+        if (bounds.width() < 1 || bounds.height() < 1)
             return
 
         var adx = dx
@@ -182,8 +198,8 @@ class RelativePointerMode(viewModel: VncViewModel, private val accelerator: Poin
 
         pointerPosition.apply {
             offset(adx, ady)
-            x = x.coerceIn(0f, xLimit)
-            y = y.coerceIn(0f, yLimit)
+            x = x.coerceIn(bounds.left, xLimit)
+            y = y.coerceIn(bounds.top, yLimit)
         }
         doButtonDown(PointerButton.None, pointerPosition)
 

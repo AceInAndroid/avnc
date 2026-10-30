@@ -12,6 +12,8 @@ import android.os.Build
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import com.gaurav.avnc.util.AppPreferences
+import com.gaurav.avnc.model.RemoteInputConfig
+import com.gaurav.avnc.model.RemoteShortcut
 import com.gaurav.avnc.vnc.XKeySym
 import com.gaurav.avnc.vnc.XKeySymAndroid
 import com.gaurav.avnc.vnc.XKeySymUnicode
@@ -82,7 +84,8 @@ import com.gaurav.avnc.vnc.XTKeyCode
  * [X Windows System Protocol](https://www.x.org/releases/X11R7.7/doc/xproto/x11protocol.html#keysym_encoding)
  *
  */
-class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
+class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences,
+                 private val remoteConfig: () -> RemoteInputConfig = { RemoteInputConfig() }) {
 
     private var emitLegacyKeysym = true  // Hardcoded to true
     private var vkMetaState = 0
@@ -92,6 +95,26 @@ class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
     private val inputPref = prefs.input
     private val kcm by lazy { KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD) }
     private val pressedKeys = mutableMapOf<Int, Int>()
+    private var virtualEvent = false
+
+    /** Semantic shortcuts use the same key conversion and pressed-key ledger as typing. */
+    fun sendShortcut(shortcut: RemoteShortcut): Boolean {
+        if (!shortcut.isValid()) return false
+        releasePressedKeys()
+        fun event(code: Int, down: Boolean): Boolean {
+            val now = android.os.SystemClock.uptimeMillis()
+            return onVkKeyEvent(KeyEvent(now, now, if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
+                    code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0))
+        }
+        return try {
+            var sent = true
+            shortcut.modifiers.forEach { sent = event(it, true) && sent }
+            sent = event(shortcut.key, true) && sent
+            sent = event(shortcut.key, false) && sent
+            shortcut.modifiers.asReversed().forEach { sent = event(it, false) && sent }
+            sent
+        } finally { releasePressedKeys() }
+    }
 
     fun releasePressedKeys() {
         pressedKeys.toMap().forEach { (keySym, xtCode) -> dispatcher.onXKey(keySym, xtCode, false) }
@@ -115,8 +138,11 @@ class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
     }
 
     fun onVkKeyEvent(event: KeyEvent): Boolean {
-        updateVkMetaState(event)
-        return onKeyEvent(event)
+        virtualEvent = true
+        return try {
+            updateVkMetaState(event)
+            onKeyEvent(event)
+        } finally { virtualEvent = false }
     }
 
     /************************************************************************************
@@ -208,7 +234,7 @@ class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
     private fun generateOutEvents(model: EventModel) {
         model.inEvents.forEach { event ->
             var keySym = 0
-            val xtCode = if (event.scanCode == 0) 0 else XTKeyCode.fromAndroidScancode(event.scanCode)
+            var xtCode = if (event.scanCode == 0) 0 else XTKeyCode.fromAndroidScancode(event.scanCode)
 
             // We prefer to use unicodeChar even when keyCode is available because
             // most servers ignore previously sent SHIFT/CAPS_LOCK keys.
@@ -236,6 +262,16 @@ class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
                 keySym = XKeySymAndroid.getKeySymForAndroidKeyCode(event.keyCode)
             }
 
+            if (!virtualEvent && model.source.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD && remoteConfig().swapCtrlMeta) {
+                val swapped = when (keySym) {
+                    XKeySym.XK_Control_L -> XKeySym.XK_Super_L
+                    XKeySym.XK_Control_R -> XKeySym.XK_Super_R
+                    XKeySym.XK_Super_L -> XKeySym.XK_Control_L
+                    XKeySym.XK_Super_R -> XKeySym.XK_Control_R
+                    else -> keySym
+                }
+                if (swapped != keySym) { keySym = swapped; xtCode = 0 }
+            }
             model.outEvents += OutEvent(event.isDown, keySym, xtCode)
         }
     }

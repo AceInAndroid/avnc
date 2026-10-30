@@ -118,6 +118,19 @@ class FrameState(
     var fbWidth = 0F; private set
     var fbHeight = 0F; private set
 
+    private var selectedRect: RectF? = null
+    val contentRect: RectF @Synchronized get() = selectedRect?.let(::RectF) ?: RectF(0f, 0f, fbWidth, fbHeight)
+
+    /** Coordinates always remain in the full remote framebuffer, even while cropped. */
+    @Synchronized
+    fun setContentRect(rect: RectF?) {
+        selectedRect = rect?.takeIf { !it.isEmpty && it.left >= 0 && it.top >= 0 && it.right <= fbWidth && it.bottom <= fbHeight }?.let(::RectF)
+        calculateBaseScale()
+        frameX = -contentRect.left * scale
+        frameY = -contentRect.top * scale
+        coerceValues()
+    }
+
     //Viewport/FrameView size
     var vpWidth = 0F; private set
     var vpHeight = 0F; private set
@@ -150,13 +163,15 @@ class FrameState(
             val fbHeight: Float,
             val vpWidth: Float,
             val vpHeight: Float,
-            val scale: Float
+            val scale: Float,
+            val contentRect: RectF
     )
 
     @Synchronized
     fun setFramebufferSize(w: Float, h: Float) {
         fbWidth = w
         fbHeight = h
+        selectedRect?.let { if (it.right > w || it.bottom > h) selectedRect = null }
         calculateBaseScale()
         coerceValues()
     }
@@ -253,7 +268,7 @@ class FrameState(
     @Synchronized
     fun toFb(vpPoint: PointF): PointF? {
         val fb = toFbUnchecked(vpPoint)
-        if (fb.x < 0F || fb.y < 0f || fb.x >= fbWidth || fb.y >= fbHeight)
+        if (!contentRect.contains(fb.x, fb.y))
             return null
         else
             return fb
@@ -274,7 +289,7 @@ class FrameState(
     fun getSnapshot(): Snapshot {
         return Snapshot(frameX = frameX, frameY = frameY,
                         fbWidth = fbWidth, fbHeight = fbHeight,
-                        vpWidth = vpWidth, vpHeight = vpHeight, scale = scale)
+                        vpWidth = vpWidth, vpHeight = vpHeight, scale = scale, contentRect = contentRect)
     }
 
     /**
@@ -288,8 +303,10 @@ class FrameState(
         if (fbHeight == 0F || fbWidth == 0F || windowHeight == 0F)
             return  //Not enough info yet
 
-        val s1 = max(windowWidth, windowHeight) / max(fbWidth, fbHeight)
-        val s2 = min(windowWidth, windowHeight) / min(fbWidth, fbHeight)
+        val rect = contentRect
+        if (rect.isEmpty) return
+        val s1 = max(windowWidth, windowHeight) / max(rect.width(), rect.height())
+        val s2 = min(windowWidth, windowHeight) / min(rect.width(), rect.height())
 
         baseScale = min(s1, s2)
     }
@@ -304,8 +321,9 @@ class FrameState(
         if (safeArea.isEmpty || !safeArea.intersect(0f, 0f, vpWidth, vpHeight))
             safeArea.set(0f, 0f, vpWidth, vpHeight)
 
-        frameX = coercePosition(frameX, safeArea.left, safeArea.right, fbWidth)
-        frameY = coercePosition(frameY, safeArea.top, safeArea.bottom, fbHeight)
+        val rect = contentRect
+        frameX = coercePosition(frameX + rect.left * scale, safeArea.left, safeArea.right, rect.width()) - rect.left * scale
+        frameY = coercePosition(frameY + rect.top * scale, safeArea.top, safeArea.bottom, rect.height()) - rect.top * scale
 
         // Align to integral boundary
         frameX = frameX.toInt().toFloat()

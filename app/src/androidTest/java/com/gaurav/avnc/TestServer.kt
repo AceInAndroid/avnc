@@ -68,7 +68,12 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
     val receivedKeySyms = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Boolean>>()
     data class PointerEvent(val mask: Int, val x: Int, val y: Int)
     val receivedPointerEvents = java.util.concurrent.CopyOnWriteArrayList<PointerEvent>()
+    // Cross-channel ordering log for sender queue/barrier assertions.
+    val receivedInputEvents = java.util.concurrent.CopyOnWriteArrayList<String>()
     val receivedKeyDowns get() = receivedKeySyms.filter { it.second }.map { it.first }
+    data class UpdateRequest(val incremental: Boolean, val x: Int, val y: Int, val width: Int, val height: Int)
+    val receivedUpdateRequests = java.util.concurrent.CopyOnWriteArrayList<UpdateRequest>()
+    val receivedEncodingLists = java.util.concurrent.CopyOnWriteArrayList<List<Int>>()
     var receivedCutText = ""; private set
     var receivedIncrementalUpdateRequests = 0; private set
 
@@ -95,6 +100,29 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
             it.write(ByteArray(3)) //Padding
             it.write(toByteArray(bytes.size))
             it.write(bytes)
+        }
+    }
+
+    /** Sends a complete ExtendedDesktopSize rectangle, including deliberately invalid layouts. */
+    fun sendDisplayLayout(width: Int, height: Int, screens: IntArray) {
+        require(screens.size % 5 == 0 && screens.size / 5 <= 255)
+        queuedActions.transfer { output ->
+            val message = java.io.DataOutputStream(output)
+            message.writeByte(0) // FramebufferUpdate
+            message.writeByte(0)
+            message.writeShort(1)
+            message.writeShort(0) // Generic layout change
+            message.writeShort(0) // Success
+            message.writeShort(width)
+            message.writeShort(height)
+            message.writeInt(-308) // ExtendedDesktopSize
+            message.writeByte(screens.size / 5)
+            message.write(ByteArray(3))
+            screens.toList().chunked(5).forEach { screen ->
+                message.writeInt(screen[0])
+                screen.drop(1).forEach { message.writeShort(it) }
+                message.writeInt(0) // Flags
+            }
         }
     }
 
@@ -197,7 +225,12 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
                 3 -> { //FramebufferUpdateRequest
 
                     val incremental = (input.read() == 1)
-                    input.skip(8)    //Discard rest of the msg as we always send the whole framebuffer
+                    val requestX = input.readUnsignedShort()
+                    val requestY = input.readUnsignedShort()
+                    val requestWidth = input.readUnsignedShort()
+                    val requestHeight = input.readUnsignedShort()
+                    receivedUpdateRequests.add(UpdateRequest(incremental, requestX, requestY, requestWidth, requestHeight))
+                    // Keep the original whole-frame Raw response for existing UI tests.
                     if (incremental) {
                         ++receivedIncrementalUpdateRequests
                         continue //Nothing to send in incremental updates
@@ -222,6 +255,7 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
 
                     // Record it
                     receivedKeySyms.add(Pair(key, isDown))
+                    receivedInputEvents.add("key:${if (isDown) 1 else 0}:$key")
                 }
 
                 0 -> input.skip(19) //SetPixelFormat
@@ -230,13 +264,14 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
                     val x = input.read().shl(8) + input.read()
                     val y = input.read().shl(8) + input.read()
                     receivedPointerEvents.add(PointerEvent(mask, x, y))
+                    receivedInputEvents.add("pointer:$mask:$x:$y")
                 }
 
 
                 2 -> { //SetEncodings
                     input.skip(1) //padding
                     val encodingCount = input.read().shl(8) + input.read()
-                    input.skip(encodingCount * 4L)
+                    receivedEncodingLists.add(List(encodingCount) { input.readInt() })
                 }
 
                 6 -> { //ClientCutText

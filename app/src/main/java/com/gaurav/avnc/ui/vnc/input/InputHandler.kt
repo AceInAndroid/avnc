@@ -8,12 +8,15 @@
 
 package com.gaurav.avnc.ui.vnc.input
 
+import android.graphics.PointF
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.gaurav.avnc.ui.vnc.VncActivity
 import com.gaurav.avnc.viewmodel.VncViewModel
 import com.gaurav.avnc.model.ServerProfile
+import com.gaurav.avnc.model.RemoteAction
+import java.lang.ref.WeakReference
 import com.gaurav.avnc.vnc.PointerButton
 
 /**
@@ -29,6 +32,8 @@ class InputHandler {
     private var keyHandler: KeyHandler? = null
     private var interceptMouseBack = false
     private var viewModel: VncViewModel? = null
+    private var activityRef = WeakReference<VncActivity>(null)
+    val systemGesturesEnabled get() = interactive && viewModel?.remoteInputConfig?.systemGestures == true
     private val interactive: Boolean get() = viewModel?.let {
         it.connected && it.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT && it.inPiPMode.value != true
     } == true
@@ -41,9 +46,10 @@ class InputHandler {
     fun onSessionConnected(activity: VncActivity) {
         val viewModel = activity.viewModel
         this.viewModel = viewModel
+        activityRef = WeakReference(activity)
         dispatcher = Dispatcher(activity)
         touchHandler = TouchHandler(activity.binding.inputView, dispatcher!!, viewModel.pref)
-        keyHandler = KeyHandler(dispatcher!!, viewModel.pref)
+        keyHandler = KeyHandler(dispatcher!!, viewModel.pref) { viewModel.remoteInputConfig }
         interceptMouseBack = viewModel.pref.input.interceptMouseBack
     }
 
@@ -54,6 +60,7 @@ class InputHandler {
         keyHandler = null
         interceptMouseBack = false
         viewModel = null
+        activityRef.clear()
     }
 
     fun onKeyEvent(keyEvent: KeyEvent): Boolean {
@@ -87,6 +94,46 @@ class InputHandler {
     }
 
     fun onVirtualPointerStart() { if (interactive) dispatcher?.onVirtualPointerStart() }
+    fun onVirtualPointerMotion(event: MotionEvent) {
+        if (!interactive) return
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) dispatcher?.accelerator?.clear()
+        dispatcher?.accelerator?.addMovement(event)
+    }
+
+    fun onRemoteConfigChanged() { cancelInput(); dispatcher?.reloadConfig() }
+
+    fun onRemoteAction(action: RemoteAction): Boolean {
+        if (!interactive) return false
+        val shortcut = viewModel?.remoteInputConfig?.shortcut(action) ?: return false
+        activityRef.get()?.releaseInputControls()
+        return keyHandler?.sendShortcut(shortcut) == true
+    }
+
+    fun onAbsolutePointerMove(point: PointF) {
+        if (interactive) dispatcher?.onAbsolutePointerMove(point)
+    }
+
+    fun onMacDock() {
+        if (!interactive || viewModel?.remoteInputConfig?.isMac != true) return
+        val method = viewModel?.profile?.dockActivation ?: "shortcut"
+        if (method == "shortcut") onRemoteAction(RemoteAction.DOCK)
+        else {
+            activityRef.get()?.releaseInputControls()
+            dispatcher?.onMacDockEdge(method)
+        }
+    }
+
+    fun onThreeFingerAction(direction: String) {
+        if (!systemGesturesEnabled) return
+        val action = when (direction) {
+            "left" -> RemoteAction.NEXT_DESKTOP
+            "right" -> RemoteAction.PREVIOUS_DESKTOP
+            "up" -> RemoteAction.OVERVIEW
+            "down" -> RemoteAction.SHOW_DESKTOP
+            else -> return
+        }
+        onRemoteAction(action)
+    }
     fun onVirtualPointerMove(dx: Float, dy: Float) { if (interactive) dispatcher?.onVirtualPointerMove(dx, dy) }
     fun onVirtualPointerButton(button: PointerButton, down: Boolean) {
         if (interactive) dispatcher?.onVirtualPointerButton(button, down)

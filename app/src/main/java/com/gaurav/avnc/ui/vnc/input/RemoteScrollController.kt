@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewConfiguration
 import com.gaurav.avnc.vnc.PointerButton
+import com.gaurav.avnc.model.RemoteInputConfig
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.hypot
@@ -17,6 +18,7 @@ internal class RemoteScrollController(
     private val enabled: () -> Boolean,
     private val interactive: () -> Boolean,
     private val emit: (PointerButton, PointF) -> Unit,
+    private val settings: () -> RemoteInputConfig = { RemoteInputConfig(axisLock = false) },
 ) : Runnable {
     private companion object {
         // Shared by touchscreen gestures, touchpad gestures and its scroll strip.
@@ -34,17 +36,35 @@ internal class RemoteScrollController(
     private var lastTime = 0L
     private var inertiaStart = 0L
     private var tickBudget = 4f
+    private var config = RemoteInputConfig()
+    private var axis = 0 // 0 undecided, 1 horizontal, 2 vertical, 3 free diagonal
+    private var travelX = 0f
+    private var travelY = 0f
+    private val directionSlop = ViewConfiguration.get(view.context).scaledTouchSlop /
+            view.resources.displayMetrics.density
 
     fun begin(point: PointF) {
         cancel()
+        config = settings()
+        axis = if (config.axisLock) 0 else 3
         anchor = PointF(point.x, point.y)
         lastTime = SystemClock.uptimeMillis()
     }
 
     fun scroll(dx: Float, dy: Float) {
         if (anchor == null || ending) return
-        pendingX += dx
-        pendingY += dy
+        travelX += dx; travelY += dy
+        if (axis == 0 && hypot(travelX, travelY) >= directionSlop) {
+            axis = when {
+                abs(travelX) >= 2 * abs(travelY) -> 1
+                abs(travelY) >= 2 * abs(travelX) -> 2
+                else -> 3
+            }
+        }
+        pendingX += dx * config.effectiveHorizontalSpeed * if (config.invertHorizontal) -1 else 1
+        pendingY += dy * config.scrollSpeed * if (config.invertVertical) -1 else 1
+        if (axis == 1) pendingY = 0f
+        if (axis == 2) pendingX = 0f
         schedule()
     }
 
@@ -52,9 +72,9 @@ internal class RemoteScrollController(
         if (cancelled) { cancel(); return }
         if (anchor == null || ending) return
         ending = true
-        if (enabled() && hypot(vx, vy) >= minimumVelocity) {
-            velocityX = vx
-            velocityY = vy
+        if (enabled() && config.inertia != "off" && axis != 0 && hypot(vx, vy) >= minimumVelocity) {
+            velocityX = if (axis == 2) 0f else vx * config.effectiveHorizontalSpeed * if (config.invertHorizontal) -1 else 1
+            velocityY = if (axis == 1) 0f else vy * config.scrollSpeed * if (config.invertVertical) -1 else 1
             inertiaStart = SystemClock.uptimeMillis()
             lastTime = inertiaStart
         }
@@ -70,6 +90,7 @@ internal class RemoteScrollController(
         ending = false
         inertiaStart = 0L
         tickBudget = 4f
+        axis = 0; travelX = 0f; travelY = 0f
     }
 
     private fun schedule() {
@@ -87,13 +108,17 @@ internal class RemoteScrollController(
         val dt = min(elapsed, 50L) / 1000f
         tickBudget = min(4f, tickBudget + elapsed * .120f)
         if (inertiaStart != 0L) {
-            val decay = exp(-dt / .180f)
-            pendingX += velocityX * .180f * (1 - decay)
-            pendingY += velocityY * .180f * (1 - decay)
+            val decay = exp(-dt / config.inertiaDecay)
+            pendingX += velocityX * config.inertiaDecay * (1 - decay)
+            pendingY += velocityY * config.inertiaDecay * (1 - decay)
             velocityX *= decay; velocityY *= decay
-            if (now - inertiaStart >= 700 || hypot(velocityX, velocityY) < minimumVelocity) {
+            if (now - inertiaStart >= config.inertiaDuration || hypot(velocityX, velocityY) < minimumVelocity) {
                 velocityX = 0f; velocityY = 0f; inertiaStart = 0L
             }
+        }
+        if (axis == 0) {
+            if (ending) cancel()
+            return
         }
         var ticksX = (pendingX / DP_PER_TICK).toInt()
         var ticksY = (pendingY / DP_PER_TICK).toInt()

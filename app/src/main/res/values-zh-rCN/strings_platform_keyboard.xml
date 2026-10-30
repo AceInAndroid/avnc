@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="platform_keyboard_mac_control">⌃ Control</string>
+    <string name="platform_keyboard_mac_option">⌥ Option</string>
+    <string name="platform_keyboard_mac_command">⌘ Command</string>
+    <string name="platform_keyboard_line_start">行首</string>
+    <string name="platform_keyboard_line_end">行尾</string>
+    <string name="platform_keyboard_previous_word">上一词</string>
+    <string name="platform_keyboard_next_word">下一词</string>
+</resources>

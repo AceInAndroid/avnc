@@ -28,6 +28,12 @@
         app:title="@string/pref_input" />
 
     <Preference
+        app:key="remote_input_templates"
+        app:icon="@drawable/ic_computer"
+        app:summary="@string/remote_input_templates_summary"
+        app:title="@string/remote_input_templates" />
+
+    <Preference
         app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Server"
         app:icon="@drawable/ic_computer"
         app:summary="@string/pref_server_summary"

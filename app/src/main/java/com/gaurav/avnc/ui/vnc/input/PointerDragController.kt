@@ -66,8 +66,8 @@ internal class PointerDragController(private val view: View, private val model: 
         val fs = model.frameState
         if (fs.fbWidth < 1 || fs.fbHeight < 1) return
         val remote = fs.toFbUnchecked(point).apply {
-            x = x.coerceIn(0f, fs.fbWidth - 1)
-            y = y.coerceIn(0f, fs.fbHeight - 1)
+            x = x.coerceIn(fs.contentRect.left, fs.contentRect.right - 1)
+            y = y.coerceIn(fs.contentRect.top, fs.contentRect.bottom - 1)
         }
         lastRemote = remote
         model.messenger?.sendPointerButtonDown(button, remote)
@@ -100,8 +100,8 @@ internal class PointerDragController(private val view: View, private val model: 
                 else -> 0f
             }
         }
-        val dx = speed(point.x, safe.left, safe.right, fs.fbWidth * fs.scale) * dt
-        val dy = speed(point.y, safe.top, safe.bottom, fs.fbHeight * fs.scale) * dt
+        val dx = speed(point.x, safe.left, safe.right, fs.contentRect.width() * fs.scale) * dt
+        val dy = speed(point.y, safe.top, safe.bottom, fs.contentRect.height() * fs.scale) * dt
         if (dx != 0f || dy != 0f) {
             val oldX = fs.frameX; val oldY = fs.frameY
             model.panFrame(dx, dy)

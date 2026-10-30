@@ -17,6 +17,11 @@
         app:summary="@string/pref_system_keyboard_summary" />
 
     <Preference
+        app:key="remote_input_templates"
+        app:title="@string/remote_input_templates"
+        app:summary="@string/remote_input_templates_summary" />
+
+    <Preference
         app:key="restore_recommended_input"
         app:title="@string/pref_restore_input"
         app:summary="@string/pref_restore_input_summary" />
@@ -119,18 +124,8 @@
             app:defaultValue="10"
             app:key="gesture_swipe_sensitivity"
             app:min="5"
-            app:title="@string/pref_swipe_sensitivity" />
+            app:title="@string/remote_input_pan_sensitivity" />
 
-        <SwitchPreference
-            android:defaultValue="false"
-            app:key="invert_vertical_scrolling"
-            app:title="@string/pref_invert_vertical_scrolling" />
-
-        <SwitchPreference
-            app:defaultValue="true"
-            app:key="remote_scroll_inertia"
-            app:title="@string/pref_remote_scroll_inertia"
-            app:summary="@string/pref_remote_scroll_inertia_summary" />
     </PreferenceCategory>
 
     <PreferenceCategory

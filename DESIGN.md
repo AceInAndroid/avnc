@@ -13,7 +13,7 @@
 - Two-finger remote scrolling uses stable-pointer centroid deltas in dp, existing sensitivity
   and inversion. Optional inertia defaults on: system fling threshold, exponential 180 ms decay,
   maximum 700 ms. One wheel tick per 8 dp (previously 20 dp), preserving the saved sensitivity
-  multiplier and hardware-wheel behavior. Emit at most 120 wheel ticks/s and four per frame, discard whole-tick backlog.
+  multiplier. Hardware wheels share resolved gains/directions, without touch inertia/axis lock. Emit at most 120 wheel ticks/s and four per frame, discard whole-tick backlog.
   Pinches, canceled gestures and the side scroll strip never start inertia. Stop inertia on any
   new input or layout/lifecycle change. Freeze the remote scroll anchor for the entire session.
 - Floating surface supports relative move, tap/double tap, long-press/double-tap-hold drag and
@@ -95,3 +95,48 @@
   labels, TalkBack state and light/dark support. Keep all existing input and cancellation contracts.
 - Verify RFB events, control no-click-through, layout switches, manual keyboard, preferences,
   rotation/read-only/PiP/disconnect, plus portrait/landscape visual evidence before delivery.
+
+## Mac and Windows remote input templates
+- A connection selects Automatic, Mac, Windows or Generic. Automatic uses Mac only when
+  the server advertises Apple's RFB 3.889 handshake; unidentified servers stay Generic.
+  Offer an explicit chooser in live controls; never infer Windows from a desktop name.
+- App settings edit separate platform templates. Saved connections inherit them with optional
+  per-field/per-shortcut overrides; unsaved connections keep changes for the session only.
+  Null overrides inherit; horizontal speed follows vertical unless explicitly customized.
+  Preserve explicitly saved legacy sensitivity/inversion/inertia/three-finger mappings once.
+- Relative pointing starts at 3 framebuffer pixels/dp; scrolling uses one wheel tick per 8dp.
+  Independent pointer/vertical/horizontal speed ranges are 0.25–3×. Apply gains once.
+  Acceleration defaults off and is always disabled while a mouse button is held.
+- Mac defaults use standard inertia (180ms decay, 700ms maximum); Windows short inertia
+  (100ms decay, 400ms maximum). Direction calibration remains per computer because VNC
+  servers may reverse the wheel. Axis lock commits after system slop: 2:1 dominance locks
+  an axis, otherwise diagonal scrolling; keep that decision until the gesture ends.
+- Mac/Windows default three-finger swipes perform system actions: left/right next/previous
+  desktop; up overview; down show desktop. Require max(32dp, 2×touch slop), 1.5:1 dominance,
+  and one action per stream. A third finger during scrolling, pinching or dragging only
+  cancels. Existing explicit three-finger mappings remain available; Generic pans locally.
+- Semantic shortcuts use Command on Mac and Ctrl/Win/Alt on Windows as appropriate.
+  Mac keyboard labels become Control/Option/Command; retain existing native Apple Option
+  conversion without a second translation. Provide editable single chords and text-navigation
+  keys, plus a System shortcuts page in More. External Ctrl/Command swapping is optional
+  and never rewrites virtual keys. No automatic keyboard opening or closing.
+- Settings dialogs share the viewer blue accent, 24dp panel corners and readable Material
+  controls. More menu rows keep at least 48dp touch targets and grow for wrapped labels.
+- Live configuration changes and all lifecycle cancellations release held keys/buttons and
+  stop scroll/drag/repeat work before applying settings; reconnect never restores held input.
+- Validate migration 7→8 and legacy JSON, actual RFB events, modifiers, read-only mode,
+  pointer gains, scroll axis/direction, three-finger ownership and keyboard labels. Inspect
+  settings and keyboard in portrait/landscape. Native feel, horizontal wheel support and
+  customized OS shortcuts need final acceptance on actual Mac/Windows VNC servers.
+
+
+## Mac desktop controls, displays and streaming (2026-10-30)
+
+- The Mac control row contains Dock, Mission Control, Displays, Quality, Keyboard, Touchpad and More. It uses 48dp touch targets, horizontal scrolling on narrow windows and the existing light/dark glass surfaces. When the keyboard is open this same row lives above its keys; keyboard visibility remains exclusively user controlled.
+- Dock sends configurable Control+F3 by default. Optional bottom/left/right edge activation moves the remote pointer without clicking. More exposes Spotlight, previous application, Quick Look, full screen and Show Desktop through the existing shortcut pipeline.
+- No Mac helper is installed. ExtendedDesktopSize metadata supplies display IDs and rectangles. Without metadata the complete desktop remains visible; a manual rectangle editor supports naming, equal splits, dragging and numeric correction. Never infer display boundaries from the framebuffer aspect ratio.
+- Mac defaults to one display; settings retain the complete remote layout. Rendering, hit testing, pointer motion, dragging and zoom bounds all use the selected rectangle in global framebuffer coordinates. Each display retains session zoom/pan; selection persists per connection. Switching releases all input and inertia, then moves the pointer to its previous target position or center without clicking. Read-only switching changes only the local view.
+- Invalidated manual rectangles fall back to the complete framebuffer and require recalibration. Remote resolution following is suspended during Mac display browsing; the app never rearranges physical displays.
+- New profiles default to Smooth (Tight JPEG quality 3, compression 1, with lossless fallbacks). HD prefers lossless ZRLE with quality-9 Tight fallback. Existing profiles migrate to Legacy and keep their original encoding behavior until explicitly switched. Pixel format and framebuffer resolution remain unchanged.
+- Encoding changes are applied by the receiver at complete protocol message boundaries and acknowledged in the UI. Selected-region requests avoid CopyRect sources outside the region and fully refresh after switching. Pure pending buttonless pointer movements and duplicate refresh requests may be merged, but key/button/wheel ordering is preserved. Preset acknowledgement describes negotiation, not guaranteed server encoding or latency.
+- Verification must cover nonzero display origins, invalid metadata/manual resize invalidation, migration, region requests, encoding negotiation, pointer masks, read-only behavior and lifecycle release. Real Mac shortcuts, multi-display servers and weak-network effects remain separate acceptance checks.

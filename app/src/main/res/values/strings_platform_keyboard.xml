@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="platform_keyboard_mac_control">⌃ Control</string>
+    <string name="platform_keyboard_mac_option">⌥ Option</string>
+    <string name="platform_keyboard_mac_command">⌘ Command</string>
+    <string name="platform_keyboard_line_start">Line start</string>
+    <string name="platform_keyboard_line_end">Line end</string>
+    <string name="platform_keyboard_previous_word">Previous word</string>
+    <string name="platform_keyboard_next_word">Next word</string>
+</resources>

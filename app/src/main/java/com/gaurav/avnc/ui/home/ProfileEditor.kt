@@ -42,6 +42,8 @@ import com.gaurav.avnc.R
 import com.gaurav.avnc.databinding.FragmentProfileEditorAdvancedBinding
 import com.gaurav.avnc.databinding.FragmentProfileEditorBinding
 import com.gaurav.avnc.model.ServerProfile
+import com.gaurav.avnc.model.RemotePlatform
+import com.gaurav.avnc.ui.prefs.RemoteInputEditor
 import com.gaurav.avnc.util.MsgDialog
 import com.gaurav.avnc.util.OpenableDocument
 import com.gaurav.avnc.util.parseMacAddress
@@ -137,6 +139,15 @@ class SimpleProfileEditor : DialogFragment() {
         binding.lifecycleOwner = this
         isCancelable = false
 
+        fun updateRemoteInputLabel() {
+            binding.remoteInputSettings.text = getString(R.string.remote_input_title) + " · " +
+                    RemoteInputEditor.platformLabel(requireContext(), RemotePlatform.from(profile.remotePlatform))
+        }
+        updateRemoteInputLabel()
+        binding.remoteInputSettings.setOnClickListener {
+            RemoteInputEditor.showProfile(requireContext(), profile, ::updateRemoteInputLabel)
+        }
+
         val dialog = MaterialAlertDialogBuilder(requireContext(), R.style.AlertDialog_Dimmed)
                 .setTitle(getTitle(this))
                 .setView(binding.root)
@@ -184,6 +195,14 @@ class AdvancedProfileEditor : Fragment() {
         binding.cancelBtn.setOnClickListener { dismiss() }
         binding.toolbar.setNavigationOnClickListener { dismiss() }
         binding.keyImportBtn.setOnClickListener { keyFilePicker.launch(arrayOf("*/*")) }
+        fun updateRemoteInputLabel() {
+            binding.remoteInputSettings.text = getString(R.string.remote_input_title) + " · " +
+                    RemoteInputEditor.platformLabel(requireContext(), RemotePlatform.from(viewModel.profile.remotePlatform))
+        }
+        updateRemoteInputLabel()
+        binding.remoteInputSettings.setOnClickListener {
+            RemoteInputEditor.showProfile(requireContext(), viewModel.profile, ::updateRemoteInputLabel)
+        }
 
         //setupHelpButton(binding.keyCompatModeHelpBtn, R.string.title_key_compat_mode, R.string.msg_key_compat_mode_help)
         setupHelpButton(binding.buttonUpDelayHelpBtn, R.string.title_button_up_delay, R.string.msg_button_up_delay_help)

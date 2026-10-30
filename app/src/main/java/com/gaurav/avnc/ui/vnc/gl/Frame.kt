@@ -28,11 +28,11 @@ class Frame : Image() {
      * Should be called whenever the size of framebuffer is changed.
      * This size will be used to calculate frame vertices.
      */
-    fun updateFbSize(width: Float, height: Float) {
-        if (frameRect.width() == width && frameRect.height() == height)
-            return //Nothing to do
-
-        frameRect.set(0f, 0f, width, height)
+    fun updateFbSize(width: Float, height: Float, content: RectF = RectF(0f, 0f, width, height)) {
+        if (width <= 0 || height <= 0) return
+        frameRect.set(content)
         updateDrawRect(frameRect)
+        updateTextureRect(RectF(content.left / width, content.top / height,
+                                content.right / width, content.bottom / height))
     }
 }

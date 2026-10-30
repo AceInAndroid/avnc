@@ -99,7 +99,7 @@ class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
         program.useProgram()
         program.setUniforms(projectionMatrix)
 
-        frame.updateFbSize(state.fbWidth, state.fbHeight)
+        frame.updateFbSize(state.fbWidth, state.fbHeight, state.contentRect)
         frame.bind(program)
         client.uploadFrameTexture()
         frame.draw()

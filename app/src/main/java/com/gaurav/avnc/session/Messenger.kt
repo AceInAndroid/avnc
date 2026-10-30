@@ -25,7 +25,18 @@ class Messenger(private val client: VncClient) {
      **************************************************************************/
     private val sender = Executors.newSingleThreadExecutor()
 
-    private fun execute(action: Runnable): Boolean {
+    private val queueLock = Any()
+    private data class PointerMove(var x: Int, var y: Int)
+    private var pendingMove: PointerMove? = null
+    private var refreshPending = false
+
+    private fun execute(action: Runnable): Boolean = synchronized(queueLock) {
+        // Every non-movement message is an ordering barrier.
+        pendingMove = null
+        enqueue(action)
+    }
+
+    private fun enqueue(action: Runnable): Boolean {
         try {
             if (client.connected && !sender.isShutdown) {
                 sender.execute(action)
@@ -55,6 +66,7 @@ class Messenger(private val client: VncClient) {
      * Keeps track of current pointer button state.
      */
     private var pointerButtonMask: Int = 0
+    val hasPressedPointerButtons get() = pointerButtonMask and 7 != 0
 
     private fun sendPointerEvent(mask: Int, p: PointF) {
         val x = p.x.toInt()
@@ -63,7 +75,35 @@ class Messenger(private val client: VncClient) {
         execute { client.sendPointerEvent(x, y, mask) }
     }
 
+    fun sendPointerMove(p: PointF) {
+        val x = p.x.toInt()
+        val y = p.y.toInt()
+        client.moveClientPointer(x, y)
+        synchronized(queueLock) {
+            if (pointerButtonMask != 0) {
+                pendingMove = null
+                val mask = pointerButtonMask
+                enqueue { client.sendPointerEvent(x, y, mask) }
+            } else {
+                val existing = pendingMove
+                if (existing != null) { existing.x = x; existing.y = y }
+                else {
+                    val move = PointerMove(x, y)
+                    pendingMove = move
+                    if (!enqueue {
+                        val point = synchronized(queueLock) {
+                            if (pendingMove === move) pendingMove = null
+                            move.x to move.y
+                        }
+                        client.sendPointerEvent(point.first, point.second, 0)
+                    }) pendingMove = null
+                }
+            }
+        }
+    }
+
     fun sendPointerButtonDown(button: PointerButton, p: PointF) {
+        if (button == PointerButton.None) { sendPointerMove(p); return }
         pointerButtonMask = pointerButtonMask or button.bitMask
         sendPointerEvent(pointerButtonMask, p)
     }
@@ -106,7 +146,22 @@ class Messenger(private val client: VncClient) {
     }
 
     fun refreshFrameBuffer() {
-        execute { client.refreshFrameBuffer() }
+        synchronized(queueLock) {
+            if (refreshPending) return
+            refreshPending = true
+            if (!execute {
+                synchronized(queueLock) { refreshPending = false }
+                client.refreshFrameBuffer()
+            }) refreshPending = false
+        }
+    }
+
+    fun setDesktopRegion(x: Int, y: Int, width: Int, height: Int) {
+        execute { client.setDesktopRegion(x, y, width, height) }
+    }
+
+    fun setStreamingPreset(preset: String) {
+        execute { client.setStreamingPreset(preset) }
     }
 
     fun setFrameBufferUpdatesPaused(pause: Boolean) {
