@@ -1,0 +1,33 @@
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="control_keyboard">Keyboard</string>
+    <string name="control_touchpad">Touchpad</string>
+    <string name="control_more">More</string>
+    <string name="control_collapse">Collapse controls</string>
+    <string name="control_open">Open controls</string>
+    <string name="control_title">Controls</string>
+    <string name="control_picture">Picture</string>
+    <string name="control_interaction">Interaction</string>
+    <string name="control_help">Gesture guide</string>
+    <string name="control_fit">Fit to screen</string>
+    <string name="control_actual">Actual size</string>
+    <string name="control_zoom_lock">Lock zoom</string>
+    <string name="control_zoom_save">Save current zoom</string>
+    <string name="control_view">View mode</string>
+    <string name="control_normal">Control desktop</string>
+    <string name="control_readonly">View only</string>
+    <string name="control_novideo">Input only</string>
+    <string name="control_style">Touch mode</string>
+    <string name="control_auto">Automatic</string>
+    <string name="control_direct">Direct touch</string>
+    <string name="control_relative">Relative pointer</string>
+    <string name="control_aux">Auxiliary keys</string>
+    <string name="control_done">Done</string>
+    <string name="control_help_intro">Your desktop, at your fingertips</string>
+    <string name="control_shortcuts">Computer shortcuts</string>
+    <string name="control_symbol_more">More symbols</string>
+    <string name="control_locked">Locked</string>
+    <string name="control_active">Selected</string>
+    <string name="control_inactive">Off</string>
+    <string name="control_touchpad_hint">Slide to move. Hold to drag. Two fingers tap to right-click or slide to scroll. Move the panel using its handle.</string>
+    <string name="control_swipe_summary">Swipe inward from the screen edge to open controls</string>
+</resources>

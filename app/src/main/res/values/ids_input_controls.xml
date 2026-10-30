@@ -1,0 +1,19 @@
+<resources>
+    <item name="floating_touchpad" type="id" />
+    <item name="touchpad_handle" type="id" />
+    <item name="touchpad_surface" type="id" />
+    <item name="touchpad_scroll" type="id" />
+    <item name="touchpad_left" type="id" />
+    <item name="touchpad_right" type="id" />
+    <item name="touchpad_collapse" type="id" />
+    <item name="touchpad_expand" type="id" />
+    <item name="controls_capsule" type="id" />
+    <item name="controls_more" type="id" />
+    <item name="controls_collapse" type="id" />
+    <item name="controls_menu" type="id" />
+    <item name="controls_menu_close" type="id" />
+    <item name="controls_help" type="id" />
+    <item name="keyboard_touchpad" type="id" />
+    <item name="keyboard_more" type="id" />
+    <item name="open_toolbar_btn" type="id" />
+</resources>

@@ -19,10 +19,12 @@ import android.os.SystemClock
 import android.util.Log
 import android.util.Rational
 import android.view.KeyEvent
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.os.BundleCompat
@@ -33,7 +35,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.gaurav.avnc.R
 import com.gaurav.avnc.databinding.ActivityVncBinding
 import com.gaurav.avnc.databinding.NoVideoOverlayBinding
-import com.gaurav.avnc.databinding.ViewerHelpBinding
 import com.gaurav.avnc.ui.vnc.input.InputHandler
 import com.gaurav.avnc.util.DeviceAuthPrompt
 import com.gaurav.avnc.util.EdgeToEdgeHelper
@@ -41,8 +42,9 @@ import com.gaurav.avnc.util.SamsungDex
 import com.gaurav.avnc.util.debugCheck
 import com.gaurav.avnc.util.enableChildLayoutTransitions
 import com.gaurav.avnc.util.isKeyboardVisible
-import com.gaurav.avnc.util.loopAnimatedDrawable
 import com.gaurav.avnc.util.showKeyboard
+import com.gaurav.avnc.util.hideKeyboard
+import com.gaurav.avnc.model.ServerProfile
 import com.gaurav.avnc.viewmodel.VncViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -72,6 +74,13 @@ class VncActivity : AppCompatActivity() {
     lateinit var binding: ActivityVncBinding
     private val inputHandler = InputHandler()
     val virtualKeys by lazy { VirtualKeys(this, inputHandler) }
+    val computerKeyboard by lazy { ComputerKeyboard(this, inputHandler) }
+    val floatingTouchpad by lazy { FloatingTouchpad(this, inputHandler) }
+    private var restoreVirtualKeys = false
+    private var restoreComputerKeyboard = false
+    private val keyboardBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = hideComputerKeyboard()
+    }
     val toolbar by lazy { Toolbar(this) }
     private val serverUnlockPrompt = DeviceAuthPrompt(this)
     private val layoutManager by lazy { LayoutManager(this) }
@@ -101,6 +110,7 @@ class VncActivity : AppCompatActivity() {
         viewModel.frameViewRef = WeakReference(binding.frameView)
 
         setupLayout()
+        setupInputControls(savedInstanceState)
         setupNoVideoOverlay()
 
         //Observers
@@ -135,7 +145,7 @@ class VncActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        virtualKeys.releaseMetaKeys()
+        releaseInputControls()
         binding.frameView.onPause()
         if (viewModel.pref.viewer.pauseUpdatesInBackground)
             viewModel.setFrameBufferUpdatesPaused(true)
@@ -149,13 +159,24 @@ class VncActivity : AppCompatActivity() {
         if (hasFocus) {
             viewModel.sendClipboardText()
             restoreKeyboard()
+        } else if (::binding.isInitialized) {
+            releaseInputControls()
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putParcelable(SAVED_STATE_KEY, prepareSavedState())
+        outState.putBoolean("computer_keyboard_visible", computerKeyboard.isVisible)
         viewModel.profileLive.value?.let { outState.putProfile(it) }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        releaseInputControls()
+        super.onConfigurationChanged(newConfig)
+        computerKeyboard.onConfigurationChanged()
+        toolbar.close()
+        binding.viewerRoot.post { updateControlLayout(); toolbar.refresh() }
     }
 
     private fun prepareSavedState(reconnectDelay: Int? = null): SavedState {
@@ -329,6 +350,12 @@ class VncActivity : AppCompatActivity() {
         binding.frameView.keepScreenOn = viewModel.pref.viewer.keepScreenOn
         inputHandler.onSessionConnected(this)
         virtualKeys.onConnected()
+        if (computerKeyboard.isVisible) virtualKeys.hide()
+        floatingTouchpad.onConnected()
+        if (restoreComputerKeyboard) {
+            restoreComputerKeyboard = false
+            showKeyboard()
+        }
         SamsungDex.setMetaKeyCapture(this, true)
 
         showViewerHelp()
@@ -341,6 +368,9 @@ class VncActivity : AppCompatActivity() {
     private fun onSessionDisconnected() {
         binding.frameView.isVisible = false
         binding.frameView.keepScreenOn = false
+        computerKeyboard.onDisconnected()
+        floatingTouchpad.onDisconnected()
+        virtualKeys.releaseMetaKeys()
         inputHandler.onSessionDisconnected()
         SamsungDex.setMetaKeyCapture(this, false)
         autoReconnect()
@@ -430,8 +460,79 @@ class VncActivity : AppCompatActivity() {
     }
 
     fun showKeyboard() {
-        showKeyboard(currentFocus ?: binding.inputView)
-        virtualKeys.onKeyboardOpen()
+        if (!viewModel.connected || viewModel.inPiPMode.value == true ||
+            viewModel.activeViewMode.value == ServerProfile.VIEW_MODE_NO_INPUT) return
+        if (viewModel.pref.input.useSystemKeyboard) {
+            hideComputerKeyboard()
+            binding.inputView.requestFocus()
+            showKeyboard(binding.inputView)
+            virtualKeys.onKeyboardOpen()
+        } else {
+            hideKeyboard(binding.inputView)
+            binding.inputView.requestFocus()
+            if (!computerKeyboard.isVisible) {
+                restoreVirtualKeys = virtualKeys.container?.isVisible == true
+                virtualKeys.releaseMetaKeys()
+                virtualKeys.hide()
+                inputHandler.cancelInput()
+                computerKeyboard.show()
+            }
+        }
+    }
+
+    fun hideComputerKeyboard() = computerKeyboard.hide()
+
+    private fun setupInputControls(savedState: Bundle?) {
+        binding.keyboardContentHost.addView(computerKeyboard.container,
+                android.widget.FrameLayout.LayoutParams(-1, -2))
+        computerKeyboard.onVisibilityChanged = { visible ->
+            keyboardBack.isEnabled = visible
+            updateControlLayout()
+            toolbar.refresh()
+            if (!visible) {
+                releaseInputControls()
+                if (restoreVirtualKeys && viewModel.connected && viewModel.inPiPMode.value != true)
+                    virtualKeys.show()
+                restoreVirtualKeys = false
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, keyboardBack)
+        floatingTouchpad.onStateChanged = { updateControlLayout(); toolbar.refresh() }
+        binding.keyboardHost.background = ControlStyle(this).background(R.color.viewer_solid)
+        binding.keyboardHost.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> computerKeyboard.updateWidth() }
+        binding.viewerRoot.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateControlLayout() }
+        binding.inputView.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
+            if (or > ol && ob > ot && (l != ol || t != ot || r != or || b != ob))
+                releaseInputControls()
+        }
+        viewModel.inPiPMode.observe(this) { inPiP ->
+            if (inPiP) { releaseInputControls(); hideComputerKeyboard() }
+            floatingTouchpad.setSuppressed(inPiP || viewModel.activeViewMode.value == ServerProfile.VIEW_MODE_NO_INPUT)
+        }
+        viewModel.activeViewMode.observe(this) { mode ->
+            if (mode == ServerProfile.VIEW_MODE_NO_INPUT) { releaseInputControls(); hideComputerKeyboard() }
+            floatingTouchpad.setSuppressed(mode == ServerProfile.VIEW_MODE_NO_INPUT || viewModel.inPiPMode.value == true)
+        }
+        restoreComputerKeyboard = savedState?.getBoolean("computer_keyboard_visible") == true
+    }
+
+    internal fun updateControlLayout() {
+        val availableWidth = binding.viewerRoot.width - binding.viewerRoot.paddingLeft - binding.viewerRoot.paddingRight
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val dock = computerKeyboard.isVisible && landscape && availableWidth >= ControlStyle(this).dp(800) && floatingTouchpad.isExpanded
+        binding.touchpadDock.isVisible = dock
+        floatingTouchpad.setDocked(dock)
+        binding.keyboardHost.isVisible = computerKeyboard.isVisible
+        computerKeyboard.updateWidth()
+        floatingTouchpad.reposition()
+    }
+
+    internal fun releaseInputControls() {
+        if (!::binding.isInitialized) return
+        computerKeyboard.releaseKeys()
+        virtualKeys.releaseMetaKeys()
+        floatingTouchpad.cancel()
+        inputHandler.cancelInput()
     }
 
     private fun updatePointerCapture(capturePointer: Boolean) {
@@ -484,6 +585,8 @@ class VncActivity : AppCompatActivity() {
         val canEnter = viewModel.pref.viewer.pipEnabled && viewModel.connected && !viewModel.videoDisabled
 
         if (canEnter && Build.VERSION.SDK_INT >= 26) {
+            releaseInputControls()
+            hideComputerKeyboard()
 
             var w = viewModel.frameState.fbWidth
             var h = viewModel.frameState.fbHeight
@@ -510,10 +613,14 @@ class VncActivity : AppCompatActivity() {
      ************************************************************************************/
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && computerKeyboard.isVisible && !event.isFromSource(InputDevice.SOURCE_MOUSE))
+            return super.onKeyDown(keyCode, event)
         return inputHandler.onKeyEvent(event) || super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && computerKeyboard.isVisible && !event.isFromSource(InputDevice.SOURCE_MOUSE))
+            return super.onKeyUp(keyCode, event)
         return inputHandler.onKeyEvent(event) || super.onKeyUp(keyCode, event)
     }
 
@@ -533,37 +640,8 @@ class VncActivity : AppCompatActivity() {
      * other tells about the Back navigation button.
      ***********************************************************************************/
     fun showViewerHelp() {
-        if (viewModel.pref.runInfo.hasShownViewerHelp)
-            return
-
-        initHelpView()
-    }
-
-    private fun initHelpView() {
-        val helpBinding = ViewerHelpBinding.inflate(layoutInflater, binding.drawerLayout, false)
-        binding.drawerLayout.addView(helpBinding.root, 1)
-        viewModel.viewerHelpIsVisible.value = true
-
-        helpBinding.root.setOnClickListener { /* Consume clicks to stop them from passing through to FrameView */ }
-        enableChildLayoutTransitions(helpBinding.pageHost)
-
-        // Open help view with animation
-        helpBinding.root.alpha = 0f
-        helpBinding.root.animate().alpha(1f).setStartDelay(500).withEndAction {
-            loopAnimatedDrawable(helpBinding.toolbarAnimation)
-        }
-
-        helpBinding.nextBtn.setOnClickListener {
-            helpBinding.page1.isVisible = false
-            helpBinding.page2.isVisible = true
-            loopAnimatedDrawable(helpBinding.navbarAnimation)
-        }
-        helpBinding.endBtn.setOnClickListener {
-            viewModel.pref.runInfo.hasShownViewerHelp = true
-            viewModel.viewerHelpIsVisible.value = false
-            helpBinding.root.animate().alpha(0f).withEndAction {
-                binding.drawerLayout.removeView(helpBinding.root)
-            }
-        }
+        if (viewModel.pref.runInfo.hasShownViewerHelp) return
+        viewModel.pref.runInfo.hasShownViewerHelp = true
+        toolbar.showHelp()
     }
 }

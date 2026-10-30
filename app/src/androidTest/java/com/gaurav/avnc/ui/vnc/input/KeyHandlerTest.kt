@@ -25,6 +25,7 @@ import io.mockk.verifySequence
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -406,13 +407,23 @@ class KeyHandlerTest {
         verifyNoneSent()
     }
 
+    // Android versions differ in the spacing character returned for a dead tilde:
+    // either SMALL TILDE (U+02DC) or ASCII '~'. Verify the platform composition
+    // is transmitted exactly once using the corresponding X11 encoding.
+    private fun spacingTildeKeySym(nextChar: Int): Int {
+        val composed = KeyEvent.getDeadChar(ACCENT_TILDE, nextChar)
+        assertTrue(composed == ACCENT_TILDE || composed == '~'.code)
+        return if (composed <= 0xff) composed else composed + 0x1000000
+    }
+
     @Test
     fun diacriticTest_sameAccentTwice() {
         sendAccent(ACCENT_TILDE)
         sendAccent(ACCENT_TILDE)
+        val expected = spacingTildeKeySym(ACCENT_TILDE)
         verifySentKeys {
-            dn(ACCENT_TILDE + 0x1000000)
-            up(ACCENT_TILDE + 0x1000000)
+            dn(expected)
+            up(expected)
         }
     }
 
@@ -561,9 +572,10 @@ class KeyHandlerTest {
     fun diacriticTest_spaceAfterAccent() {
         sendAccent(ACCENT_TILDE)
         sendKey(KeyEvent.KEYCODE_SPACE)
+        val expected = spacingTildeKeySym(' '.code)
         verifySentKeys {
-            dn(ACCENT_TILDE + 0x1000000)
-            up(ACCENT_TILDE + 0x1000000)
+            dn(expected)
+            up(expected)
         }
     }
 

@@ -14,10 +14,11 @@ import androidx.test.espresso.Espresso.onIdle
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.pressImeActionButton
 import androidx.test.espresso.action.ViewActions.pressKey
+import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.action.ViewActions.typeText
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.contrib.DrawerActions
 import androidx.test.espresso.contrib.ViewPagerActions
 import androidx.test.espresso.matcher.ViewMatchers.isChecked
 import androidx.test.espresso.matcher.ViewMatchers.isNotChecked
@@ -37,7 +38,6 @@ import com.gaurav.avnc.checkKeyboardIsDisplayed
 import com.gaurav.avnc.checkWillBeDisplayed
 import com.gaurav.avnc.doClick
 import com.gaurav.avnc.doLongClick
-import com.gaurav.avnc.doTypeText
 import com.gaurav.avnc.runOnMainSync
 import com.gaurav.avnc.targetContext
 import com.gaurav.avnc.targetPrefs
@@ -47,6 +47,7 @@ import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -55,6 +56,8 @@ class VirtualKeysTest : VncSessionTest() {
     @JvmField
     @Rule
     val prefsRule = CleanPrefsRule()
+
+    @Before fun enableAuxiliaryKeysForLegacyTests() { targetPrefs.edit { putBoolean("run_info_show_virtual_keys", true) } }
 
     @Test
     fun basicTest() {
@@ -90,8 +93,8 @@ class VirtualKeysTest : VncSessionTest() {
 
         vncSession.run {
             onView(withText("Ctrl")).check(doesNotExist())
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.virtual_keys_btn)).doClick()
+            onView(withId(R.id.controls_more)).doClick()
+            onView(withText(R.string.control_aux)).perform(scrollTo()).doClick()
 
             // Should be visible
             onView(withText("Ctrl")).checkIsDisplayed()
@@ -109,17 +112,17 @@ class VirtualKeysTest : VncSessionTest() {
     @Test
     fun openAlongWithKeyboard() {
         targetPrefs.edit {
+            putBoolean("use_system_keyboard", true)
             putBoolean("vk_open_with_keyboard", true)
             putBoolean("run_info_show_virtual_keys", false)
         }
 
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
             onView(withId(R.id.keyboard_btn)).doClick()
-            onIdle()
+            onView(withId(R.id.input_view)).checkKeyboardIsDisplayed()
 
-            // Should be visible
-            onView(withText("Ctrl")).checkIsDisplayed()
+            // IME visibility and layout are asynchronous.
+            onView(withText("Ctrl")).checkWillBeDisplayed()
             onView(withText("Alt")).checkIsDisplayed()
             onView(withText("Tab")).checkIsDisplayed()
         }
@@ -127,6 +130,7 @@ class VirtualKeysTest : VncSessionTest() {
 
     @Test
     fun toggleKeyboard() {
+        targetPrefs.edit { putBoolean("use_system_keyboard", true) }
         vncSession.run {
             val toggleBtnMatcher = withContentDescription("Toggle keyboard")
 
@@ -154,8 +158,8 @@ class VirtualKeysTest : VncSessionTest() {
 
 
             // Now open it
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.virtual_keys_btn)).doClick()
+            onView(withId(R.id.controls_more)).doClick()
+            onView(withText(R.string.control_aux)).perform(scrollTo()).doClick()
 
             onView(withText("Ctrl")).checkWillBeDisplayed()
             onView(withText("Alt")).checkIsDisplayed()
@@ -191,8 +195,9 @@ class VirtualKeysTest : VncSessionTest() {
             onView(withId(R.id.pager)).perform(ViewPagerActions.scrollToLast(false))
             onView(withHint(R.string.hint_send_text_to_server))
                     .checkIsDisplayed()
-                    .doTypeText(text)
-                    .perform(pressImeActionButton())
+                    // Test the app's send-text conversion independently of the installed
+                    // Android IME's autocorrection, punctuation and Enter handling.
+                    .perform(replaceText(text), pressImeActionButton())
         }
 
         val sentByClient = text.toCharArray().map { it.code }.toList()
@@ -216,7 +221,7 @@ class VirtualKeysTest : VncSessionTest() {
     fun vkModifierKeysShouldApplyToKeyPressedOnKeyboard() {
         vncSession.run {
             onView(withText("Shift")).checkWillBeDisplayed().doClick()
-            onView(withId(R.id.input_view)).doTypeText("a") // Should be sent as uppercase A to server
+            onView(withId(R.id.input_view)).perform(typeText("a")).checkKeyboardIsHidden() // Should be sent as uppercase A to server
         }
         assertEquals(listOf(XKeySym.XK_Shift_L, XKeySym.XK_A), vncSession.server.receivedKeyDowns)
     }

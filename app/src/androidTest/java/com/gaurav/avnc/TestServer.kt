@@ -8,7 +8,7 @@
 
 package com.gaurav.avnc
 
-import java.io.InputStream
+import java.io.DataInputStream
 import java.io.OutputStream
 import java.math.BigInteger
 import java.net.ServerSocket
@@ -39,13 +39,13 @@ import kotlin.random.Random
  * It also enables us to completely control the behaviour of the server,
  * so we can simulate different scenarios, error conditions etc.
  */
-class TestServer(name: String = "Friends") {
+class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
 
     //Protocol config
     private var protocol = "RFB 003.008\n"
     private val serverName = name.toByteArray()
-    private val frameWidth: Short = 10
-    private val frameHeight: Short = 10
+    private val frameWidth: Short = width.also { require(it in 1..Short.MAX_VALUE) }.toShort()
+    private val frameHeight: Short = height.also { require(it in 1..Short.MAX_VALUE) }.toShort()
     private val frameBuffer = ByteArray(frameWidth * frameHeight * 4)
 
     //Server config
@@ -65,7 +65,9 @@ class TestServer(name: String = "Friends") {
     private var stopRequested = false
 
     //Event log
-    val receivedKeySyms = mutableListOf<Pair<Int, Boolean>>()
+    val receivedKeySyms = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Boolean>>()
+    data class PointerEvent(val mask: Int, val x: Int, val y: Int)
+    val receivedPointerEvents = java.util.concurrent.CopyOnWriteArrayList<PointerEvent>()
     val receivedKeyDowns get() = receivedKeySyms.filter { it.second }.map { it.first }
     var receivedCutText = ""; private set
     var receivedIncrementalUpdateRequests = 0; private set
@@ -118,7 +120,7 @@ class TestServer(name: String = "Friends") {
      */
     private fun theServer() {
         val socket = ss.use { runCatching { it.accept() }.onFailure { return }.getOrThrow() }
-        val input = socket.getInputStream()
+        val input = DataInputStream(socket.getInputStream())
         val output = socket.getOutputStream()
 
         //Protocol Handshake
@@ -139,7 +141,7 @@ class TestServer(name: String = "Friends") {
                 val expected = encryptVncAuthChallenge(challenge, password)
 
                 output.write(challenge)
-                input.read(response)
+                input.readFully(response)
 
                 response.contentEquals(expected)
             }
@@ -155,8 +157,8 @@ class TestServer(name: String = "Friends") {
 
                 val encrypted = ByteArray(128)
                 val clientPublic = ByteArray(dh.getKeyLengthInBytes())
-                input.read(encrypted)
-                input.read(clientPublic)
+                input.readFully(encrypted)
+                input.readFully(clientPublic)
 
                 dh.verify(encrypted, clientPublic, username, password)
             }
@@ -223,7 +225,12 @@ class TestServer(name: String = "Friends") {
                 }
 
                 0 -> input.skip(19) //SetPixelFormat
-                5 -> input.skip(5)  //PointerEvent
+                5 -> { // PointerEvent: mask, x, y (network byte order)
+                    val mask = input.read()
+                    val x = input.read().shl(8) + input.read()
+                    val y = input.read().shl(8) + input.read()
+                    receivedPointerEvents.add(PointerEvent(mask, x, y))
+                }
 
 
                 2 -> { //SetEncodings
@@ -236,8 +243,8 @@ class TestServer(name: String = "Friends") {
                     input.skip(3)//padding
                     val length = readInt(input)
                     val textBuffer = ByteArray(length)
-                    val read = input.read(textBuffer)
-                    check(read == length)
+                    // TCP may split a clipboard message across multiple reads.
+                    input.readFully(textBuffer)
                     receivedCutText = textBuffer.toString(StandardCharsets.ISO_8859_1)
                 }
 
@@ -258,11 +265,7 @@ class TestServer(name: String = "Friends") {
         return ByteBuffer.allocate(2).putShort(s).order(ByteOrder.BIG_ENDIAN).array()
     }
 
-    private val intBytes = ByteArray(4)
-    private fun readInt(input: InputStream): Int {
-        input.read(intBytes)
-        return ByteBuffer.wrap(intBytes).order(ByteOrder.BIG_ENDIAN).getInt()
-    }
+    private fun readInt(input: DataInputStream): Int = input.readInt()
 
 
     /**

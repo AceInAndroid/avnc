@@ -91,6 +91,17 @@ class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
     private var hasSentAltDown = false
     private val inputPref = prefs.input
     private val kcm by lazy { KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD) }
+    private val pressedKeys = mutableMapOf<Int, Int>()
+
+    fun releasePressedKeys() {
+        pressedKeys.toMap().forEach { (keySym, xtCode) -> dispatcher.onXKey(keySym, xtCode, false) }
+        pressedKeys.clear()
+        vkMetaState = 0
+        hasSentShiftDown = false
+        hasSentCtrlDown = false
+        hasSentAltDown = false
+        accentSequence.clear()
+    }
 
 
     fun onKeyEvent(event: KeyEvent): Boolean {
@@ -429,7 +440,11 @@ class KeyHandler(private val dispatcher: Dispatcher, prefs: AppPreferences) {
         if (keySym == 0)
             return false
 
-        return dispatcher.onXKey(keySym, xtCode, isDown)
+        val sent = dispatcher.onXKey(keySym, xtCode, isDown)
+        if (sent) {
+            if (isDown) pressedKeys[keySym] = xtCode else pressedKeys.remove(keySym)
+        }
+        return sent
     }
 
     /************************************************************************************

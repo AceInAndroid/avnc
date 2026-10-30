@@ -1,0 +1,12 @@
+<resources>
+    <color name="viewer_glass">#F527292E</color>
+    <color name="viewer_solid">#202226</color>
+    <color name="viewer_ink">#F5F5F7</color>
+    <color name="viewer_secondary">#B2B6BF</color>
+    <color name="viewer_line">#3D9898A5</color>
+    <color name="viewer_key">#41434A</color>
+    <color name="viewer_key_secondary">#303238</color>
+    <color name="viewer_blue">#6AABFF</color>
+    <color name="viewer_selected">#263F60</color>
+    <color name="viewer_highlight">#24FFFFFF</color>
+</resources>

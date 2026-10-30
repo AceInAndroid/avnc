@@ -1,423 +1,304 @@
-/*
- * Copyright (c) 2024  Gaurav Ujjwal.
- *
- * SPDX-License-Identifier:  GPL-3.0-or-later
- *
- * See COPYING.txt for more details.
- */
-
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 package com.gaurav.avnc.ui.vnc
 
 import android.annotation.SuppressLint
-import android.graphics.Rect
+import android.content.res.ColorStateList
 import android.os.Build
-import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
-import android.widget.Toast
-import android.widget.ToggleButton
-import androidx.annotation.RequiresApi
-import androidx.annotation.StringRes
-import androidx.core.view.GravityCompat
-import androidx.core.view.ViewCompat
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
-import androidx.core.view.marginBottom
-import androidx.core.view.marginTop
-import androidx.drawerlayout.widget.DrawerLayout
 import com.gaurav.avnc.R
 import com.gaurav.avnc.model.ServerProfile
+import com.google.android.material.button.MaterialButton
 
-/**
- *
- * Overview of toolbar layout:
- *
- *                DrawerLayout
- *   +-------------------+--------------+
- *   |                   |              |
- *   |   Toolbar Drawer  |              |
- *   |    [drawerView]   |              |
- *   |                   |              |
- *   |+---+              |              |
- *   || B |              |              |
- *   || t |              |              |
- *   || n |+------------+|    Scrim     |
- *   || s ||  Flyouts   ||              |
- *   |+---++------------+|              |
- *   |                   |              |
- *   |                   |              |
- *   |                   |              |
- *   |                   |              |
- *   |                   |              |
- *   +-------------------+--------------+
- *
- * User can align the toolbar to left or right edge.
- *
- */
+/** A single control entry, shared by the viewer capsule and keyboard header. */
 class Toolbar(private val activity: VncActivity) {
-    private val viewModel = activity.viewModel
-    private val binding = activity.binding.toolbar
-    private val drawerLayout = activity.binding.drawerLayout
-    private val drawerView = binding.root
-    private val openWithSwipe = viewModel.pref.viewer.toolbarOpenWithSwipe
-    private val openWithButton = viewModel.pref.viewer.toolbarOpenWithButton
-    private val openerButton = activity.binding.openToolbarBtn
-    private val flyouts = mutableMapOf<ToggleButton, View>()
+    private val vm = activity.viewModel
+    private val style = ControlStyle(activity)
+    private val host = activity.binding.frameContainer
+    private val capsule = LinearLayout(activity)
+    private val opener = style.icon(R.drawable.ic_control_controls, R.string.control_open)
+    private val menuOverlay = FrameLayout(activity)
+    private val menuPanel = LinearLayout(activity)
+    private val menuScroll = ScrollView(activity)
+    private lateinit var touchpadButton: MaterialButton
+    private var initialized = false
+    private var connected = false
+    private var menuHelp = false
+    private var bottomInset = 0
+    private var compactLabels: Boolean? = null
+    private var edgeCandidate = false
+    private var edgeCaptured = false
+    private var edgeX = 0f
+    private var edgeY = 0f
+    private val back = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = close()
+    }
+    val isOpen get() = menuOverlay.isVisible
+    private val legacyInset get() = activity.virtualKeys.container?.takeIf { it.isVisible }?.height ?: 0
+    val bottomObstruction get() = if (capsule.isVisible || opener.isVisible) style.dp(76) + maxOf(bottomInset, legacyInset) else bottomInset
 
     fun initialize() {
-        binding.keyboardBtn.setOnClickListener { activity.showKeyboard(); close() }
-        binding.zoomOptionsToggle.setOnLongClickListener { resetZoomToDefault(); close(); true }
-        binding.zoomResetBtn.setOnClickListener { resetZoomToDefault(); close() }
-        binding.zoomResetBtn.setOnLongClickListener { resetZoom(); close(); true }
-        binding.zoomLockBtn.setOnCheckedChangeListener { _, checked -> toggleZoomLock(checked); close() }
-        binding.zoomSaveBtn.setOnClickListener { saveZoom(); close() }
-        binding.virtualKeysBtn.setOnClickListener { activity.virtualKeys.show(true); close() }
+        if (initialized) return
+        initialized = true
+        capsule.id = R.id.controls_capsule
+        capsule.gravity = Gravity.CENTER
+        capsule.setPadding(style.dp(6), style.dp(4), style.dp(6), style.dp(4))
+        capsule.background = style.background(radius = 32)
+        capsule.elevation = style.dp(8).toFloat()
+        capsule.isClickable = true
+        fun action(label: Int, icon: Int, id: Int, run: () -> Unit): MaterialButton {
+            val b = style.button(activity.getString(label)).apply {
+                this.id = id
+                this.icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(activity, icon)
+                iconSize = style.dp(19); iconPadding = style.dp(6)
+                iconTint = ColorStateList.valueOf(style.ink)
+                backgroundTintList = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+                cornerRadius = style.dp(24)
+                minimumWidth = style.dp(48)
+                setOnClickListener { run() }
+            }
+            capsule.addView(b, LinearLayout.LayoutParams(-2, style.dp(48)))
+            return b
+        }
+        action(R.string.control_keyboard, R.drawable.ic_control_keyboard, R.id.keyboard_btn) { activity.showKeyboard() }
+        touchpadButton = action(R.string.control_touchpad, R.drawable.ic_control_touchpad, R.id.touchpad_btn) { toggleTouchpad() }
+        action(R.string.control_more, R.drawable.ic_control_more, R.id.controls_more) { open() }
+        capsule.addView(style.icon(R.drawable.ic_control_chevron, R.string.control_collapse).apply {
+            id = R.id.controls_collapse
+            setOnClickListener { vm.pref.input.controlsCollapsed = true; refresh() }
+        }, LinearLayout.LayoutParams(style.dp(48), style.dp(48)))
+        host.addView(capsule, floatingParams())
+        opener.id = R.id.open_toolbar_btn
+        opener.elevation = style.dp(6).toFloat()
+        opener.background = style.background(radius = 24)
+        opener.setOnClickListener { vm.pref.input.controlsCollapsed = false; refresh() }
+        host.addView(opener, floatingParams().apply { width = style.dp(48); height = style.dp(48) })
 
-        // Root view is transparent. Click on it should work just like a click in scrim area
-        drawerView.setOnClickListener { close() }
+        menuOverlay.id = R.id.controls_menu
+        menuOverlay.visibility = View.GONE
+        menuOverlay.isClickable = true
+        menuOverlay.setBackgroundColor(0x24000000)
+        menuOverlay.setOnClickListener { close() }
+        menuPanel.orientation = LinearLayout.VERTICAL
+        menuPanel.background = style.background()
+        menuPanel.elevation = style.dp(12).toFloat()
+        menuPanel.isClickable = true
+        menuPanel.setPadding(style.dp(16), style.dp(8), style.dp(16), style.dp(12))
+        menuScroll.isFillViewport = false
+        menuScroll.addView(menuPanel)
+        menuScroll.isClickable = true
+        menuOverlay.addView(menuScroll)
+        activity.binding.viewerRoot.addView(menuOverlay, FrameLayout.LayoutParams(-1, -1))
+        activity.onBackPressedDispatcher.addCallback(activity, back)
+        activity.binding.inputView.controlGestureInterceptor = ::onEdgeTouch
+        host.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> position(); activity.floatingTouchpad.reposition() }
+        vm.inPiPMode.observe(activity) { if (it) close(); refresh() }
+        vm.activeViewMode.observe(activity) { refresh() }
+        vm.activeGestureStyle.observe(activity) { if (isOpen) renderMenu() }
+        refresh()
+    }
 
-        viewModel.inPiPMode.observe(activity) { if (it) close() }
+    private fun floatingParams() = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+        bottomMargin = style.dp(12) + bottomInset
+    }
 
-        setupAlignment()
-        setupFlyouts()
-        setupFlyoutClose()
-        setupOpenerButton()
-        setupViewModeSelection()
-        setupGestureStyleSelection()
-        setupGestureExclusionRect()
-        setupDrawerCloseOnScrimSwipe()
+    fun refresh() {
+        if (!initialized) return
+        val show = connected && vm.inPiPMode.value != true && !activity.computerKeyboard.isVisible
+        capsule.isVisible = show && !vm.pref.input.controlsCollapsed
+        opener.isVisible = show && vm.pref.input.controlsCollapsed
+        val canInput = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT
+        capsule.findViewById<View>(R.id.keyboard_btn)?.apply { isEnabled = canInput; alpha = if (canInput) 1f else .4f }
+        touchpadButton.isEnabled = canInput
+        touchpadButton.alpha = if (canInput) 1f else .4f
+        val selected = activity.floatingTouchpad.isExpanded
+        touchpadButton.isSelected = selected
+        touchpadButton.setTextColor(if (selected) style.blue else style.ink)
+        touchpadButton.iconTint = ColorStateList.valueOf(if (selected) style.blue else style.ink)
+        activity.computerKeyboard.updateTouchpadSelection(selected)
+        position()
+    }
+
+    fun toggleTouchpad() {
+        activity.floatingTouchpad.toggle()
+        refresh()
+        if (activity.floatingTouchpad.isExpanded && !vm.pref.input.hasShownControlHelp) showHelp()
     }
 
     fun open() {
-        drawerLayout.openDrawer(drawerView)
+        if (!connected || vm.inPiPMode.value == true) return
+        activity.releaseInputControls()
+        menuHelp = false
+        renderMenu()
+        menuOverlay.isVisible = true
+        back.isEnabled = true
+        menuOverlay.bringToFront()
+        position()
+        if (Build.VERSION.SDK_INT < 26 || android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            menuPanel.alpha = 0f
+            menuPanel.animate().alpha(1f).setDuration(150).start()
+        }
+        androidx.core.view.ViewCompat.setAccessibilityPaneTitle(menuPanel, activity.getString(R.string.control_title))
+    }
+
+    fun showHelp() {
+        open()
+        if (!isOpen) return
+        vm.pref.input.hasShownControlHelp = true
+        menuHelp = true
+        renderMenu()
     }
 
     fun close() {
-        drawerLayout.closeDrawer(drawerView)
+        menuOverlay.isVisible = false
+        back.isEnabled = false
+        menuHelp = false
     }
 
     fun onStateChange(isConnected: Boolean) {
-        if (Build.VERSION.SDK_INT >= 29)
-            updateGestureExclusionRect()
-
-        updateLockMode(isConnected)
-        openerButton.isVisible = openWithButton && isConnected
+        initialize()
+        connected = isConnected
+        if (!connected) close()
+        refresh()
     }
 
-    /**
-     * The main thing problematic for toolbar is the display cutout.
-     * If any cutout is found to overlap the toolbar, system window
-     * fitting is enabled, which automatically adds required paddings.
-     */
     fun handleInsets(insets: WindowInsetsCompat) {
-        val cutout = insets.displayCutout
-        if (cutout == null || !viewModel.pref.viewer.drawBehindCutout)
-            return
-
-        val v = binding.primaryButtons
-        val r = getActionableToolbarRect()
-        val shouldFit = cutout.boundingRects.find { it.intersect(r) } != null
-
-        if (v.fitsSystemWindows != shouldFit) {
-            v.fitsSystemWindows = shouldFit
-            ViewCompat.onApplyWindowInsets(v, WindowInsetsCompat(insets))
-        }
+        val safe = insets.getInsets(WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.systemBars())
+        bottomInset = safe.bottom
+        menuOverlay.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+        position()
     }
 
-    private fun toast(@StringRes msgRes: Int) = Toast.makeText(activity, msgRes, Toast.LENGTH_SHORT).show()
-
-    private fun resetZoom() {
-        viewModel.resetZoom()
-        toast(R.string.msg_zoom_reset)
-    }
-
-    private fun resetZoomToDefault() {
-        viewModel.resetZoomToDefault()
-        toast(R.string.msg_zoom_reset_default)
-    }
-
-    private fun toggleZoomLock(enabled: Boolean) {
-        viewModel.toggleZoomLock(enabled)
-        toast(if (enabled) R.string.msg_zoom_locked else R.string.msg_zoom_unlocked)
-    }
-
-    private fun saveZoom() {
-        viewModel.saveZoom()
-        toast(R.string.msg_zoom_saved)
-    }
-
-    private fun setupViewModeSelection() {
-        val viewModeButtonMap = mapOf(
-                ServerProfile.VIEW_MODE_NORMAL to R.id.view_mode_normal,
-                ServerProfile.VIEW_MODE_NO_INPUT to R.id.view_mode_no_input,
-                ServerProfile.VIEW_MODE_NO_VIDEO to R.id.view_mode_no_video
-        )
-
-        binding.viewModeGroup.let { group ->
-            check(group.childCount == viewModeButtonMap.size)
-
-            viewModel.activeViewMode.observe(activity) {
-                group.check(viewModeButtonMap[it] ?: R.id.view_mode_normal)
+    private fun position() {
+        if (!initialized || host.width == 0) return
+        listOf(capsule, opener).forEach { view ->
+            (view.layoutParams as FrameLayout.LayoutParams).let { params ->
+                val margin = style.dp(12) + maxOf(bottomInset, legacyInset)
+                if (params.bottomMargin != margin) { params.bottomMargin = margin; view.layoutParams = params }
             }
-
-            group.addOnButtonCheckedListener { _, checkedId, isChecked ->
-                if (isChecked) {
-                    if (viewModel.connected) { // Make sure profile is available
-                        val newMode = viewModeButtonMap.entries.first { it.value == checkedId }.key
-                        if (viewModel.activeViewMode.value != newMode) {
-                            viewModel.setViewMode(newMode)
-                            showViewModeChangeToast(newMode)
-                        }
-                    }
-                    close()
-                }
+        }
+        val menuHost = activity.binding.viewerRoot
+        val landscape = menuHost.width > menuHost.height
+        val width = minOf(menuHost.width - style.dp(24) - menuOverlay.paddingLeft - menuOverlay.paddingRight, style.dp(400))
+        val params = FrameLayout.LayoutParams(width.coerceAtLeast(1), -2,
+                Gravity.BOTTOM or if (landscape) Gravity.END else Gravity.CENTER_HORIZONTAL).apply {
+            setMargins(style.dp(12), style.dp(12), style.dp(12), style.dp(if (landscape) 12 else 80))
+        }
+        val maxHeight = (menuHost.height - menuOverlay.paddingTop - menuOverlay.paddingBottom - params.bottomMargin - style.dp(12)).coerceAtLeast(1)
+        menuScroll.measure(View.MeasureSpec.makeMeasureSpec(width.coerceAtLeast(1), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST))
+        params.height = minOf(menuScroll.measuredHeight, maxHeight)
+        val old = menuScroll.layoutParams as? FrameLayout.LayoutParams
+        if (old == null || old.width != params.width || old.height != params.height || old.gravity != params.gravity ||
+            old.bottomMargin != params.bottomMargin || old.leftMargin != params.leftMargin || old.topMargin != params.topMargin) {
+            menuScroll.layoutParams = params
+        }
+        val compact = host.width < style.dp(340) || (activity.resources.configuration.fontScale > 1.3f && host.width < style.dp(440))
+        if (compactLabels != compact) {
+            compactLabels = compact
+            for (i in 0 until capsule.childCount) (capsule.getChildAt(i) as? MaterialButton)?.let {
+                val label = activity.getString(when (it.id) {
+                    R.id.keyboard_btn -> R.string.control_keyboard
+                    R.id.touchpad_btn -> R.string.control_touchpad
+                    else -> R.string.control_more
+                })
+                it.text = if (compact) "" else label
+                it.contentDescription = label
+                it.iconPadding = if (compact) 0 else style.dp(6)
             }
         }
     }
 
-    private fun showViewModeChangeToast(newMode: Int) {
-        when (newMode) {
-            ServerProfile.VIEW_MODE_NORMAL -> toast(R.string.msg_normal_view_mode)
-            ServerProfile.VIEW_MODE_NO_INPUT -> toast(R.string.msg_input_disabled)
-        }
-    }
-
-    private fun setupGestureStyleSelection() {
-        val styleButtonMap = mapOf(
-                "auto" to R.id.gesture_style_auto,
-                "touchscreen" to R.id.gesture_style_touchscreen,
-                "touchpad" to R.id.gesture_style_touchpad
-        )
-
-        binding.gestureStyleGroup.let { group ->
-            viewModel.activeGestureStyle.observe(activity) {
-                // Retrieve gesture style from profile,
-                // because activeGestureStyle doesn't contain the 'auto' option
-                group.check(styleButtonMap[viewModel.profile.gestureStyle] ?: -1)
-            }
-
-            group.setOnCheckedChangeListener { _, id ->
-                if (viewModel.connected) { // Make sure profile is available
-                    val newStyle = styleButtonMap.entries.first { it.value == id }.key
-                    viewModel.setGestureStyle(newStyle)
-                }
-                close()
-            }
-        }
-    }
-
-    private fun updateLockMode(isConnected: Boolean) {
-        if (isConnected && openWithSwipe)
-            drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNDEFINED)
-        else
-            drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
-    }
-
-    /**
-     * Returns a rectangle covering the area occupied by primary buttons in opened state.
-     * Returned rectangle is in [drawerLayout]'s coordinate space.
-     */
-    private fun getActionableToolbarRect(): Rect {
-        val v = drawerView
-        val r = Rect(v.left, binding.primaryButtons.top, v.right, binding.primaryButtons.bottom)
-
-        if (r.left < 0) r.offset(v.width, 0)                          // closed along left edge
-        else if (r.right > drawerLayout.right) r.offset(-v.width, 0)  // closed along right edge
-
-        return r
-    }
-
-
-    /**
-     * Setup gravity & layout direction
-     */
-    @SuppressLint("RtlHardcoded")
-    private fun setupAlignment() {
-        val gravity = if (viewModel.pref.viewer.toolbarAlignment == "start") GravityCompat.START else GravityCompat.END
-
-        drawerView.layoutParams = (drawerView.layoutParams as DrawerLayout.LayoutParams).apply {
-            this.gravity = gravity
-        }
-
-        openerButton.layoutParams = (openerButton.layoutParams as FrameLayout.LayoutParams).apply {
-            this.gravity = gravity
-        }
-
-        // Before layout pass, layoutDirection should be retrieved from Activity config
-        val layoutDirection = activity.resources.configuration.layoutDirection
-        val isLeftAligned = Gravity.getAbsoluteGravity(gravity, layoutDirection) == Gravity.LEFT
-
-        // We need the layout direction based on alignment rather than language/locale
-        // so that flyouts and button icons are properly ordered.
-        drawerView.layoutDirection = if (isLeftAligned) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
-        openerButton.layoutDirection = drawerView.layoutDirection
-
-        // Let the gesture group have natural layout as it contains text elements
-        binding.gestureStyleGroup.layoutDirection = layoutDirection
-    }
-
-    /**
-     * Setup gesture exclusion updates
-     */
-    private fun setupGestureExclusionRect() {
-        if (Build.VERSION.SDK_INT >= 29) {
-            binding.primaryButtons.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                updateGestureExclusionRect()
-            }
-        }
-    }
-
-    /**
-     * Add System Gesture exclusion rects to allow toolbar opening when gesture navigation is active.
-     * Note: Some ROMs, e.g. MIUI, completely ignore whatever is set here.
-     */
-    @RequiresApi(29)
-    private fun updateGestureExclusionRect() {
-        if (!openWithSwipe || !viewModel.connected) {
-            drawerLayout.systemGestureExclusionRects = listOf()
-        } else {
-            // Area covered by primaryButtons, in drawerLayout's coordinate space
-            val rect = getActionableToolbarRect()
-
-            if (viewModel.pref.viewer.fullscreen) {
-                // For fullscreen activities, Android does not enforce the height limit of exclusion area.
-                // We could use the entire height for opening toolbar, but that will completely disable gestures.
-                // So we pad by one-third of available space in each direction
-                val padding = (drawerLayout.height - rect.height()) / 6
-                if (padding > 0) {
-                    rect.top -= padding
-                    rect.bottom += padding
-                }
-            }
-
-            drawerLayout.systemGestureExclusionRects = listOf(rect)
-        }
-    }
-
-    private fun setupFlyouts() {
-        flyouts += binding.viewModesToggle to binding.viewModeGroup
-        flyouts += binding.gestureStyleToggle to binding.gestureStyleGroup
-        flyouts += binding.zoomOptionsToggle to binding.zoomOptionsGroup
-
-        flyouts.values.forEach { it.isVisible = false }
-
-        flyouts.keys.forEach { toggle ->
-            toggle.setOnCheckedChangeListener { _, isChecked ->
-                flyouts[toggle]?.isVisible = isChecked
-
-                if (isChecked) // Close others
-                    flyouts.keys.forEach { if (it != toggle) it.isChecked = false }
-            }
-        }
-    }
-
-    /**
-     * Close flyouts after drawer is closed.
-     *
-     * We can't do this in [close] because that will change toolbar width _while_ drawer
-     * is closing. This can conflict with close animation, and mess with internal calculations
-     * of DrawerLayout, resulting in failure of close operation.
-     */
-    private fun setupFlyoutClose() {
-        drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
-            override fun onDrawerClosed(closedView: View) {
-                if (closedView == drawerView) {
-                    flyouts.keys.forEach { it.isChecked = false }
-                }
-            }
-        })
-    }
-
-    /**
-     * Normally, drawers in [DrawerLayout] are closed by two gestures:
-     * 1. Swipe 'on' the drawer
-     * 2. Tap inside Scrim (dimmed region outside of drawer)
-     *
-     * Notably, swiping inside scrim area does NOT hide the drawer. This can be jarring
-     * to users if drawer is relatively small & most of the layout area acts as scrim.
-     * The toolbar drawer is affected by this issue.
-     *
-     * This function attempts to detect these swipe gestures and close the drawer
-     * when they happen.
-     *
-     * Note: It will set a custom TouchListener on [drawerLayout].
-     */
-    @SuppressLint("ClickableViewAccessibility", "RtlHardcoded")
-    private fun setupDrawerCloseOnScrimSwipe() {
-        drawerLayout.setOnTouchListener(object : View.OnTouchListener {
-            var drawerOpen = false
-            var drawerGravity = Gravity.LEFT
-
-            val detector = GestureDetector(drawerLayout.context, object : GestureDetector.SimpleOnGestureListener() {
-
-                override fun onFling(e1: MotionEvent?, e2: MotionEvent, vX: Float, vY: Float): Boolean {
-                    if ((drawerGravity == Gravity.LEFT && vX < 0) || (drawerGravity == Gravity.RIGHT && vX > 0)) {
-                        close()
-                        drawerOpen = false
-                    }
-                    return true
-                }
+    private fun renderMenu() {
+        androidx.core.view.ViewCompat.setAccessibilityPaneTitle(menuPanel, activity.getString(if (menuHelp) R.string.control_help else R.string.control_title))
+        menuPanel.removeAllViews()
+        val heading = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
+        heading.addView(style.label(activity.getString(if (menuHelp) R.string.control_help else R.string.control_title), 20f, true),
+                LinearLayout.LayoutParams(0, style.dp(48), 1f))
+        heading.addView(style.icon(R.drawable.ic_control_close, R.string.control_done).apply {
+            id = R.id.controls_menu_close; setOnClickListener { close() }
+        }, LinearLayout.LayoutParams(style.dp(48), style.dp(48)))
+        menuPanel.addView(heading)
+        if (menuHelp) {
+            menuPanel.addView(style.label(activity.getString(R.string.control_help_intro), 16f, true).apply { setPadding(0, style.dp(8), 0, style.dp(8)) })
+            menuPanel.addView(style.label(activity.getString(R.string.msg_mouse_gesture_help), 15f).apply {
+                setLineSpacing(style.dp(5).toFloat(), 1f); setPadding(0, style.dp(8), 0, style.dp(16))
             })
-
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                    drawerOpen = drawerLayout.isDrawerOpen(drawerView)
-                    drawerGravity = Gravity.getAbsoluteGravity(
-                            (drawerView.layoutParams as DrawerLayout.LayoutParams).gravity,
-                            drawerLayout.layoutDirection) and Gravity.HORIZONTAL_GRAVITY_MASK
-                }
-
-                if (drawerOpen)
-                    detector.onTouchEvent(event)
-
-                return false
+            menuPanel.addView(style.label(activity.getString(R.string.control_touchpad_hint), 15f).apply { setLineSpacing(style.dp(5).toFloat(), 1f) })
+        } else {
+            section(R.string.control_picture)
+            option(R.string.control_fit) { vm.resetZoomToDefault(); close() }
+            option(R.string.control_actual) { vm.resetZoom(); close() }
+            option(R.string.control_zoom_lock, vm.profile.fZoomLocked) { vm.toggleZoomLock(!vm.profile.fZoomLocked); renderMenu() }
+            option(R.string.control_zoom_save, enabled = vm.profile.isSaved()) { vm.saveZoom(); close() }
+            section(R.string.control_view)
+            listOf(R.string.control_normal to ServerProfile.VIEW_MODE_NORMAL,
+                    R.string.control_readonly to ServerProfile.VIEW_MODE_NO_INPUT,
+                    R.string.control_novideo to ServerProfile.VIEW_MODE_NO_VIDEO).forEach { (label, mode) ->
+                option(label, vm.activeViewMode.value == mode) { vm.setViewMode(mode); close() }
             }
-        })
+            section(R.string.control_interaction)
+            if (vm.pref.viewer.toolbarShowGestureStyleToggle) {
+                listOf(R.string.control_auto to "auto", R.string.control_direct to "touchscreen", R.string.control_relative to "touchpad").forEach { (label, mode) ->
+                    option(label, vm.profile.gestureStyle == mode, vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_VIDEO) { vm.setGestureStyle(mode); close() }
+                }
+            }
+            option(R.string.control_aux, enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT) {
+                activity.hideComputerKeyboard(); activity.virtualKeys.show(true); close()
+            }
+            section(R.string.control_help)
+            option(R.string.control_help) { menuHelp = true; vm.pref.input.hasShownControlHelp = true; renderMenu() }
+        }
+        menuScroll.scrollTo(0, 0)
+        menuOverlay.post { position() }
+    }
+
+    private fun section(label: Int) {
+        menuPanel.addView(style.label(activity.getString(label), 12f).apply { setPadding(style.dp(10), style.dp(16), 0, style.dp(6)) })
+    }
+
+    private fun option(label: Int, selected: Boolean? = null, enabled: Boolean = true, run: () -> Unit) {
+        val b = style.button(activity.getString(label) + if (selected == true) "  ✓" else "").apply {
+            contentDescription = activity.getString(label)
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setPadding(style.dp(12), 0, style.dp(12), 0)
+            isEnabled = enabled; alpha = if (enabled) 1f else .4f
+            style.select(this, selected == true)
+            if (Build.VERSION.SDK_INT >= 30 && selected != null) stateDescription = activity.getString(if (selected) R.string.control_active else R.string.control_inactive)
+            setOnClickListener { run() }
+        }
+        menuPanel.addView(b, LinearLayout.LayoutParams(-1, -2).apply { height = style.dp(48); bottomMargin = style.dp(3) })
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun setupOpenerButton() {
-        if (!openWithButton)
-            return
-
-        val runInfo = viewModel.pref.runInfo
-        var verticalBias = runInfo.toolbarOpenerBtnVerticalBias
-        val openerButtonParent = (openerButton.parent as ViewGroup)
-
-        val gestureListener = object : GestureDetector.SimpleOnGestureListener() {
-            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
-                val parentHeight = openerButtonParent.height
-                val parentTouchY = openerButton.y + e2.y
-                verticalBias = parentTouchY / parentHeight
-                updateOpenerBtnPosition(openerButton, verticalBias)
-                return true
+    private fun onEdgeTouch(event: MotionEvent): Boolean {
+        if (!connected || !vm.pref.viewer.toolbarOpenWithSwipe || activity.computerKeyboard.isVisible) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                edgeCaptured = false
+                val left = vm.pref.viewer.toolbarAlignment == "start"
+                edgeCandidate = if (left) event.x <= style.dp(20) else event.x >= host.width - style.dp(20)
+                edgeX = event.x; edgeY = event.y
             }
+            MotionEvent.ACTION_POINTER_DOWN -> edgeCandidate = false
+            MotionEvent.ACTION_MOVE -> if (edgeCandidate && event.pointerCount == 1) {
+                val dx = (event.x - edgeX) * if (vm.pref.viewer.toolbarAlignment == "start") 1 else -1
+                val dy = kotlin.math.abs(event.y - edgeY)
+                if (dy > style.dp(32) && dy > dx) edgeCandidate = false
+                if (dx > maxOf(style.dp(32), ViewConfiguration.get(activity).scaledTouchSlop * 2) && dx > dy * 2) {
+                    edgeCandidate = false; edgeCaptured = true; open()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { edgeCandidate = false; return edgeCaptured.also { edgeCaptured = false } }
         }
-        val gestureDetector = GestureDetector(activity, gestureListener)
-        gestureDetector.setIsLongpressEnabled(false)
-
-        openerButton.setOnTouchListener { v, e ->
-            if (e.actionMasked == MotionEvent.ACTION_UP && verticalBias != runInfo.toolbarOpenerBtnVerticalBias)
-                runInfo.toolbarOpenerBtnVerticalBias = verticalBias // Save position
-
-            gestureDetector.onTouchEvent(e)
-            v.onTouchEvent(e)
-        }
-        openerButton.setOnClickListener { open() }
-
-        openerButtonParent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateOpenerBtnPosition(openerButton, verticalBias)
-        }
-    }
-
-    private fun updateOpenerBtnPosition(btn: View, verticalBias: Float) {
-        val parentHeight = (btn.parent as ViewGroup).height
-        val minY = btn.marginTop
-        val maxY = parentHeight - btn.height - btn.marginBottom
-        val y = (parentHeight * verticalBias).toInt().coerceAtMost(maxY).coerceAtLeast(minY)
-        btn.y = y.toFloat()
+        return edgeCaptured
     }
 }

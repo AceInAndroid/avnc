@@ -12,6 +12,9 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.gaurav.avnc.ui.vnc.VncActivity
+import com.gaurav.avnc.viewmodel.VncViewModel
+import com.gaurav.avnc.model.ServerProfile
+import com.gaurav.avnc.vnc.PointerButton
 
 /**
  * Input handler for remote session.
@@ -25,6 +28,10 @@ class InputHandler {
     private var touchHandler: TouchHandler? = null
     private var keyHandler: KeyHandler? = null
     private var interceptMouseBack = false
+    private var viewModel: VncViewModel? = null
+    private val interactive: Boolean get() = viewModel?.let {
+        it.connected && it.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT && it.inPiPMode.value != true
+    } == true
 
     /**
      * List of listeners to be notified after a [KeyEvent] is handled
@@ -33,6 +40,7 @@ class InputHandler {
 
     fun onSessionConnected(activity: VncActivity) {
         val viewModel = activity.viewModel
+        this.viewModel = viewModel
         dispatcher = Dispatcher(activity)
         touchHandler = TouchHandler(activity.binding.inputView, dispatcher!!, viewModel.pref)
         keyHandler = KeyHandler(dispatcher!!, viewModel.pref)
@@ -40,20 +48,24 @@ class InputHandler {
     }
 
     fun onSessionDisconnected() {
+        cancelInput()
         dispatcher = null
         touchHandler = null
         keyHandler = null
         interceptMouseBack = false
+        viewModel = null
     }
 
     fun onKeyEvent(keyEvent: KeyEvent): Boolean {
-        val handled = keyHandler?.onKeyEvent(keyEvent) == true || interceptBackPressFromMouse(keyEvent)
+        dispatcher?.stopRemoteScroll()
+        val handled = (interactive && keyHandler?.onKeyEvent(keyEvent) == true) || interceptBackPressFromMouse(keyEvent)
         onAfterKeyEventListeners.forEach { it(keyEvent) }
         return handled
     }
 
     fun onVkKeyEvent(keyEvent: KeyEvent): Boolean {
-        val handled = keyHandler?.onVkKeyEvent(keyEvent) == true
+        dispatcher?.stopRemoteScroll()
+        val handled = interactive && keyHandler?.onVkKeyEvent(keyEvent) == true
         onAfterKeyEventListeners.forEach { it(keyEvent) }
         return handled
     }
@@ -72,6 +84,26 @@ class InputHandler {
 
     fun onHoverEvent(event: MotionEvent): Boolean {
         return touchHandler?.onHoverEvent(event) == true
+    }
+
+    fun onVirtualPointerStart() { if (interactive) dispatcher?.onVirtualPointerStart() }
+    fun onVirtualPointerMove(dx: Float, dy: Float) { if (interactive) dispatcher?.onVirtualPointerMove(dx, dy) }
+    fun onVirtualPointerButton(button: PointerButton, down: Boolean) {
+        if (interactive) dispatcher?.onVirtualPointerButton(button, down)
+    }
+    fun onVirtualPointerClick(button: PointerButton = PointerButton.Left, count: Int = 1) {
+        if (interactive) dispatcher?.onVirtualPointerClick(button, count)
+    }
+    fun onVirtualPointerScroll(dx: Float, dy: Float) { if (interactive) dispatcher?.onVirtualPointerScroll(dx, dy) }
+    fun onVirtualPointerScrollEnd(vx: Float, vy: Float, cancelled: Boolean = false) {
+        if (interactive) dispatcher?.onVirtualPointerScrollEnd(vx, vy, cancelled)
+    }
+    fun onVirtualPointerStop(cancelled: Boolean = false) { dispatcher?.onVirtualPointerStop(cancelled) }
+
+    fun cancelInput() {
+        touchHandler?.cancel()
+        keyHandler?.releasePressedKeys()
+        dispatcher?.cancelInput()
     }
 
     /*********************************************************************************************/

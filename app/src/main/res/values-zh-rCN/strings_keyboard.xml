@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="computer_keyboard_common">字母</string>
+    <string name="computer_keyboard_functions">功能 / 方向</string>
+    <string name="computer_keyboard_symbols">符号</string>
+    <string name="computer_keyboard_close">收起电脑键盘</string>
+    <string name="computer_keyboard_backspace">退格</string>
+    <string name="computer_keyboard_enter">回车</string>
+    <string name="computer_keyboard_space">空格</string>
+    <string name="computer_keyboard_up">上方向键</string>
+    <string name="computer_keyboard_down">下方向键</string>
+    <string name="computer_keyboard_left">左方向键</string>
+    <string name="computer_keyboard_right">右方向键</string>
+    <string name="computer_keyboard_modifier">%1$s；点击用于下次按键，长按锁定</string>
+    <string name="computer_keyboard_modifier_active">%1$s 已启用，用于下次按键</string>
+    <string name="computer_keyboard_modifier_locked">%1$s 已锁定，点击释放</string>
+    <string name="computer_keyboard_caps_on">大写锁定已开启，点击关闭</string>
+    <string name="computer_keyboard_caps_off">大写锁定已关闭，点击开启</string>
+</resources>

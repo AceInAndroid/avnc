@@ -84,6 +84,11 @@ class Messenger(private val client: VncClient) {
         return execute { client.sendKeyEvent(keySym, xtCode, isDown) }
     }
 
+    fun setInputDisabled(disabled: Boolean) {
+        // Release messages queued by UI observers must arrive before the view-only gate closes.
+        execute { client.setInputDisabled(disabled) }
+    }
+
     fun insertButtonUpDelay() {
         execute { runCatching { Thread.sleep(200) } }
     }

@@ -1,0 +1,97 @@
+# Remote input controls
+
+## Gesture mouse revision
+- Recommended defaults: long press starts a left-button drag at the original touch point;
+  two-finger tap right-clicks at the first finger's original point. Double-tap-and-hold drag
+  remains available. Saved gesture mappings retain their behavior. Use a single `left-drag`
+  long-press action so this does not depend on a pair of preference values.
+- Long press uses system timing/slop, vibrates once, and shows a transient drag indicator.
+  Drag owns the gesture until release/cancel; no trailing click, fling or new multi-finger action.
+- Direct dragging within 32 dp of a visible edge pans the viewport at up to 480 dp/s, including
+  corners. Recompute the held remote position each frame even with a stationary finger; clamp
+  at desktop bounds. Relative pointing only pans enough to keep the cursor inside a 32 dp margin.
+- Two-finger remote scrolling uses stable-pointer centroid deltas in dp, existing sensitivity
+  and inversion. Optional inertia defaults on: system fling threshold, exponential 180 ms decay,
+  maximum 700 ms. One wheel tick per 8 dp (previously 20 dp), preserving the saved sensitivity
+  multiplier and hardware-wheel behavior. Emit at most 120 wheel ticks/s and four per frame, discard whole-tick backlog.
+  Pinches, canceled gestures and the side scroll strip never start inertia. Stop inertia on any
+  new input or layout/lifecycle change. Freeze the remote scroll anchor for the entire session.
+- Floating surface supports relative move, tap/double tap, long-press/double-tap-hold drag and
+  two-finger right-click/scroll. While a physical panel button is held the surface only moves
+  the cursor. Panel header motion never sends remote input.
+- Keyboard visibility is user-controlled: toolbar opens it, close/back hides it; no inferred
+  remote focus or touchpad expansion may open/hide it. If space is insufficient, retain the
+  compact touchpad and explain that the user can close the keyboard manually.
+- Cancel animations and release held input at the last valid remote coordinate on multitouch
+  during drag, focus loss, view-only/PiP, disconnect, rotation and available-area changes.
+  Consume the rest of a canceled touch stream; never restore held input on reconnect.
+
+## Interaction contract
+- Default touchscreen mode: tap clicks at the touched location, double tap double-clicks,
+  one-finger swipe pans the local viewport, two-finger swipe scrolls the remote application.
+- Two-finger pinch zooms locally. Swipe/pinch classification waits for touch slop and is
+  latched until either finger lifts. Remaining fingers cannot start a new gesture or click.
+- Explicitly saved gesture preferences remain valid. Input settings offer recommended defaults.
+- All new input travels through InputHandler, KeyHandler/Dispatcher, and Messenger. Respect
+  view-only mode and connection state. Cancel pending repeats and release held input before
+  focus loss, hiding controls, backgrounding, PiP, or session teardown.
+
+## Computer keyboard
+- App-owned bottom dock; default keyboard actions open it without Android IME. A preference
+  retains the system IME option. Hide the legacy auxiliary keys while this dock is open.
+- Common page: staggered QWERTY, punctuation, wide space/Enter, Backspace and Shift.
+  Ctrl/Alt/Win/Tab/Escape are grouped above it; 123 contains digits and two symbol sets.
+  Function page: symbols, F1–F12, arrows, Home/End, Page Up/Down, Insert/Delete.
+- Tap Shift/Ctrl/Alt/Win for a one-shot modifier; long press locks it; tap again releases it.
+  Clearly label locked state. Caps Lock is independent. Backspace/arrows repeat while held.
+- Input uses existing virtual key mapping. Chinese composition belongs to the remote IME.
+- Keyboard occupies layout space rather than overlaying the framebuffer. Back closes an open
+  control menu first, then hides the keyboard.
+  Restore visibility across configuration changes, never restore held keys.
+
+## Floating touchpad
+- Initially hidden on new installs; preserve explicit saved visibility. An expanded panel starts
+  at bottom right. Header repositions it locally; collapse returns to the capsule entry.
+- Touch surface: relative cursor motion at 3 remote pixels per dp (including dragging), keeping
+  fractional coordinates for small adjustments; tap left-click, two-finger horizontal/vertical scroll.
+  Side strip: vertical scroll. Bottom: left/right buttons; hold left while moving to drag.
+- Panel consumes all its touches, without leaking events through to the desktop. Dragging its
+  handle never moves the remote cursor. Persist normalized position, visibility and collapse.
+  Clamp into visible bounds after rotation, insets and keyboard changes; no overlay permission.
+- Independent pointer commands must not change the main screen's gesture style.
+
+## Visual and accessibility contract
+- Use viewer-local light/dark glass colors, blue accents, rounded surfaces and native buttons.
+  Match dark/light themes, use readable legends, pressed/selected/locked states and descriptions.
+- Compact keyboard rows adapt to screen width/height; function keys are paged rather than
+  shrinking the entire computer keyboard. Floating mouse controls have 48 dp touch targets.
+- English and simplified Chinese strings accompany new controls and preferences.
+
+## Acceptance
+- Verify actual RFB key symbols, pointer coordinates and button masks with the test server.
+- Test gesture arbitration/cancellation, one-shot/locked modifiers, repeats, touchpad dragging,
+  repositioning, no click-through, view-only mode, lifecycle resets and rotation/PiP.
+- Build a debug APK, run targeted instrumentation and lint, inspect portrait/landscape UI.
+  Real-server horizontal scrolling and Chinese remote IME remain environment-dependent checks.
+
+## iOS 26 control UI revision
+- Viewer-only light glass palette: warm white/charcoal, readable translucent surfaces, subtle
+  borders/shadows, blue selection. No framebuffer capture, real-time blur or rendering changes.
+- Bottom capsule: Keyboard, Touchpad, More and Collapse; collapsed state has one 48dp opener.
+  Keyboard header owns these actions while typing. No timed auto-hide or inferred keyboard focus.
+- More overlays the whole viewer (including the keyboard) with labeled Picture, Interaction
+  and Help groups, so landscape keyboards do not squeeze the menu. Outside touches dismiss without
+  remote input. Back closes the menu before the keyboard. Retain optional edge-swipe opening.
+- New installs show only the capsule (no legacy auxiliary bar or expanded touchpad); preserve
+  explicitly saved auxiliary/touchpad/gesture preferences.
+  Collapsed pad uses the capsule entry. Avoid overlapping capsule and floating panel.
+- Staggered mobile QWERTY: no permanent number row, large space/return, Shift/backspace on third
+  row. Separate Ctrl/Alt/Win/Tab/Esc shortcuts. Numeric/symbol and Fn pages preserve computer keys.
+  One-shot modifiers have blue selection; locked modifiers add a lock mark. Caps is independent.
+- Keyboard reserves space. In landscape at >=800dp available width, an enabled expanded touchpad
+  docks to its right at 220dp; reuse the same view and restore normalized floating position afterward.
+  Insufficient space temporarily compacts the pad without changing its saved expansion preference.
+- 24dp panels, pill capsules, 8dp keys, 48dp action targets, short system-aware transitions, en/zh
+  labels, TalkBack state and light/dark support. Keep all existing input and cancellation contracts.
+- Verify RFB events, control no-click-through, layout switches, manual keyboard, preferences,
+  rotation/read-only/PiP/disconnect, plus portrait/landscape visual evidence before delivery.

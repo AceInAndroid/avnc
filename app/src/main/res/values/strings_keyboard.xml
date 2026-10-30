@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English fallback is intentional for locales other than the supplied en/zh-CN controls. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="computer_keyboard_common">ABC</string>
+    <string name="computer_keyboard_functions">Fn / Arrows</string>
+    <string name="computer_keyboard_symbols">Symbols</string>
+    <string name="computer_keyboard_close">Hide computer keyboard</string>
+    <string name="computer_keyboard_backspace">Backspace</string>
+    <string name="computer_keyboard_enter">Enter</string>
+    <string name="computer_keyboard_space">Space</string>
+    <string name="computer_keyboard_up">Arrow up</string>
+    <string name="computer_keyboard_down">Arrow down</string>
+    <string name="computer_keyboard_left">Arrow left</string>
+    <string name="computer_keyboard_right">Arrow right</string>
+    <string name="computer_keyboard_modifier">%1$s; tap for next key, hold to lock</string>
+    <string name="computer_keyboard_modifier_active">%1$s active for next key</string>
+    <string name="computer_keyboard_modifier_locked">%1$s locked; tap to release</string>
+    <string name="computer_keyboard_caps_on">Caps Lock on; tap to turn off</string>
+    <string name="computer_keyboard_caps_off">Caps Lock off; tap to turn on</string>
+</resources>

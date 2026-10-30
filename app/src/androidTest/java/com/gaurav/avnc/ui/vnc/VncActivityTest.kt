@@ -16,7 +16,10 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.contrib.DrawerActions
+import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.action.ViewActions.typeText
+import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
+import androidx.test.espresso.matcher.ViewMatchers.isSelected
 import androidx.test.espresso.matcher.ViewMatchers.isChecked
 import androidx.test.espresso.matcher.ViewMatchers.isNotChecked
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
@@ -38,6 +41,7 @@ import com.gaurav.avnc.checkDoesNotExist
 import com.gaurav.avnc.checkIsDisplayed
 import com.gaurav.avnc.checkIsNotDisplayed
 import com.gaurav.avnc.checkKeyboardIsDisplayed
+import com.gaurav.avnc.checkKeyboardIsHidden
 import com.gaurav.avnc.checkWillBeCompletelyDisplayed
 import com.gaurav.avnc.checkWillBeDisplayed
 import com.gaurav.avnc.checkWithTimeout
@@ -125,9 +129,8 @@ class VncActivityTest : VncSessionTest() {
     @Test
     fun openKeyboard() {
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
             onView(withId(R.id.keyboard_btn)).doClick()
-            onView(withId(R.id.input_view)).checkKeyboardIsDisplayed()
+            vncSession.onActivity { assertTrue(it.computerKeyboard.isVisible) }
         }
     }
 
@@ -136,7 +139,7 @@ class VncActivityTest : VncSessionTest() {
         val text = "abcxyzABCXYZ1234567890{}[]()`~@#$%^&*_+-=/*"
 
         vncSession.run {
-            onView(withId(R.id.input_view)).doTypeText(text)
+            onView(withId(R.id.input_view)).perform(typeText(text)).checkKeyboardIsHidden()
         }
 
         val sentByClient = text.toCharArray().map { it.code }.toList()
@@ -261,14 +264,9 @@ class VncActivityTest : VncSessionTest() {
             startServer()
             startActivity(false)
 
-            onView(withText(R.string.msg_viewer_tips_label)).checkWillBeDisplayed()
-            onView(withText(R.string.tip_toolbar_usage)).checkIsDisplayed()
-            onView(withText(R.string.title_next)).checkIsDisplayed().doClick()
-
-            onView(withText(R.string.tip_session_end)).checkWillBeDisplayed()
-            onView(withText(R.string.title_got_it)).checkIsDisplayed().doClick()
-
-            onView(withText(R.string.msg_viewer_tips_label)).checkWithTimeout(doesNotExist())
+            onView(withText(R.string.control_help_intro)).checkWillBeDisplayed()
+            onView(withId(R.id.controls_menu_close)).doClick()
+            onView(withId(R.id.controls_menu)).checkWithTimeout(matches(withEffectiveVisibility(androidx.test.espresso.matcher.ViewMatchers.Visibility.GONE)))
             assertConnected()
             stop()
         }
@@ -285,118 +283,68 @@ class VncActivityTest : VncSessionTest() {
     }
 
     /*************************** Toolbar *******************************************/
-    @Test
-    fun gestureStyleUiTouchpad() {
+    @Test fun gestureStyleUiTouchpad() {
         vncSession.profile.gestureStyle = "touchpad"
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.gesture_style_toggle)).checkWillBeDisplayed().doClick()
-            onView(withText(R.string.pref_gesture_style_touchpad))
-                    .checkWillBeDisplayed()
-                    .check(matches(isChecked()))
+            vncSession.onActivity { it.toolbar.open() }
+            onView(withContentDescription(R.string.control_relative)).perform(scrollTo()).check(matches(isSelected()))
         }
     }
 
-    @Test
-    fun gestureStyleUiTouchscreen() {
+    @Test fun gestureStyleUiTouchscreen() {
         vncSession.profile.gestureStyle = "touchscreen"
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.gesture_style_toggle)).checkWillBeDisplayed().doClick()
-            onView(withText(R.string.pref_gesture_style_touchscreen))
-                    .checkWillBeDisplayed()
-                    .check(matches(isChecked()))
+            vncSession.onActivity { it.toolbar.open() }
+            onView(withContentDescription(R.string.control_direct)).perform(scrollTo()).check(matches(isSelected()))
         }
     }
 
-    @Test
-    fun gestureStyleChange() {
+    @Test fun gestureStyleChange() {
         vncSession.saveProfileToDB(dbRule.db)
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.gesture_style_toggle)).checkWillBeDisplayed().doClick()
-            onView(withText(R.string.pref_gesture_style_auto)).checkWillBeDisplayed()
-            onView(withText(R.string.pref_gesture_style_auto)).check(matches(isChecked()))
-
-            // Test switching to touchpad
-            onView(withId(R.id.gesture_style_touchpad)).doClick()
+            vncSession.onActivity { it.toolbar.open() }
+            onView(withContentDescription(R.string.control_auto)).perform(scrollTo()).check(matches(isSelected()))
+            onView(withContentDescription(R.string.control_relative)).perform(scrollTo()).doClick()
             pollingAssert { assertEquals("touchpad", loadProfileFromDB()?.gestureStyle) }
-            vncSession.onActivity { a -> assertEquals("touchpad", a.viewModel.activeGestureStyle.value) }
+            vncSession.onActivity { assertEquals("touchpad", it.viewModel.activeGestureStyle.value) }
         }
     }
 
-    @Test
-    fun normalViewMode() {
+    @Test fun normalViewMode() {
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.view_modes_toggle)).checkWillBeDisplayed().doClick()
-            onView(withContentDescription(R.string.desc_view_mode_normal))
-                    .checkWillBeDisplayed()
-                    .check(matches(isChecked())) // Normal mode is the default
-
-            onView(withContentDescription(R.string.desc_view_mode_no_input)).check(matches(isNotChecked()))
-            onView(withContentDescription(R.string.desc_view_mode_no_video)).check(matches(isNotChecked()))
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.close())
-
+            vncSession.onActivity { it.toolbar.open() }
+            onView(withContentDescription(R.string.control_normal)).perform(scrollTo()).check(matches(isSelected()))
+            vncSession.onActivity { it.toolbar.close() }
             onView(withId(R.id.frame_view)).checkIsDisplayed()
             onView(withText(R.string.msg_video_disabled)).check(doesNotExist())
         }
     }
 
-    @Test
-    fun noInputMode() {
+    @Test fun noInputMode() {
         vncSession.saveProfileToDB(dbRule.db)
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.view_modes_toggle)).checkWillBeDisplayed().doClick()
-            onView(withContentDescription(R.string.desc_view_mode_no_input))
-                    .checkWillBeCompletelyDisplayed()
-                    .check(matches(isNotChecked()))
-                    .doClick()
-
-            onView(withContentDescription(R.string.desc_view_mode_normal)).check(matches(isNotChecked()))
-            onView(withContentDescription(R.string.desc_view_mode_no_input)).check(matches(isChecked()))
-            onView(withContentDescription(R.string.desc_view_mode_no_video)).check(matches(isNotChecked()))
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.close())
-
+            vncSession.onActivity { it.toolbar.open() }
+            onView(withContentDescription(R.string.control_readonly)).perform(scrollTo()).doClick()
             onView(withText(R.string.msg_video_disabled)).check(doesNotExist())
-            onView(withId(R.id.input_view)).checkIsDisplayed().doTypeText("abc")
-
+            onView(withId(R.id.input_view)).checkIsDisplayed().perform(typeText("abc")).checkKeyboardIsHidden()
             pollingAssert { assertEquals(ServerProfile.VIEW_MODE_NO_INPUT, loadProfileFromDB()?.viewMode) }
-            vncSession.onActivity { a -> assertEquals(ServerProfile.VIEW_MODE_NO_INPUT, a.viewModel.activeViewMode.value) }
+            vncSession.onActivity { assertEquals(ServerProfile.VIEW_MODE_NO_INPUT, it.viewModel.activeViewMode.value) }
         }
-
         assertEquals(0, vncSession.server.receivedKeyDowns.size)
     }
 
-    @Test
-    fun noVideoMode() {
+    @Test fun noVideoMode() {
         vncSession.saveProfileToDB(dbRule.db)
         vncSession.run {
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.open())
-            onView(withId(R.id.view_modes_toggle)).checkWillBeDisplayed().doClick()
-            onView(withContentDescription(R.string.desc_view_mode_no_video))
-                    .checkWillBeCompletelyDisplayed()
-                    .check(matches(isNotChecked()))
-                    .doClick()
-
-            onView(withContentDescription(R.string.desc_view_mode_normal)).check(matches(isNotChecked()))
-            onView(withContentDescription(R.string.desc_view_mode_no_input)).check(matches(isNotChecked()))
-            onView(withContentDescription(R.string.desc_view_mode_no_video)).check(matches(isChecked()))
-            onView(withId(R.id.drawer_layout)).perform(DrawerActions.close())
-
+            vncSession.onActivity { it.toolbar.open() }
+            onView(withContentDescription(R.string.control_novideo)).perform(scrollTo()).doClick()
             onView(withText(R.string.msg_video_disabled)).checkWillBeDisplayed()
-
             pollingAssert { assertEquals(ServerProfile.VIEW_MODE_NO_VIDEO, loadProfileFromDB()?.viewMode) }
             vncSession.onActivity { a ->
                 assertEquals(ServerProfile.VIEW_MODE_NO_VIDEO, a.viewModel.activeViewMode.value)
-                repeat(10) {
-                    a.viewModel.refreshFrameBuffer()
-                }
+                repeat(10) { a.viewModel.refreshFrameBuffer() }
             }
         }
-
-        // no-video mode is implemented by stopping incremental updates
         assertEquals(1, vncSession.server.receivedIncrementalUpdateRequests)
     }
 
@@ -407,10 +355,11 @@ class VncActivityTest : VncSessionTest() {
         }
 
         vncSession.run {
+            onView(withId(R.id.controls_collapse)).checkWillBeDisplayed().doClick()
             onView(withId(R.id.open_toolbar_btn)).checkWillBeDisplayed().doClick()
             onView(withId(R.id.keyboard_btn)).checkWillBeDisplayed()
-            onView(withId(R.id.virtual_keys_btn)).checkIsDisplayed()
-            onView(withId(R.id.zoom_options_toggle)).checkIsDisplayed()
+            onView(withId(R.id.controls_more)).doClick()
+            onView(withText(R.string.control_fit)).checkWillBeDisplayed()
         }
     }
 }

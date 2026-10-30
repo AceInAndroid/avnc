@@ -251,8 +251,54 @@ class TouchHandlerTest {
         sendEvent(Factory.obtainCancelEvent(downEvent, testPoint))
         verifyOrder {
             mockDispatcher.onGestureStart()
-            mockDispatcher.onGestureStop(testPoint)
+            mockDispatcher.onGestureCancel()
         }
+    }
+
+    @Test fun secondFingerDuringLongPressDragCancelsWithoutRightClick() {
+        val start = PointF(100f, 100f)
+        val second = PointF(180f, 100f)
+        sendDown(start)
+        Thread.sleep(Delay.LONG_PRESS_CONFIRM)
+        sendEvent(Factory.obtainPointerDownEvent(downEvent, start, second))
+        sendEvent(Factory.obtainMoveEvent(downEvent, PointF(200f, 150f), PointF(280f, 150f)))
+        sendEvent(Factory.obtainPointerUpEvent(downEvent, start, second))
+        sendUp(start)
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify { mockDispatcher.onLongPress(start); mockDispatcher.onGestureCancel() }
+        verify(exactly = 0) { mockDispatcher.onTap1(any()); mockDispatcher.onTap2(any()); mockDispatcher.onSwipe2(any(), any(), any(), any()) }
+    }
+
+    @Test fun longPressDragNeverStartsViewportFling() {
+        sendDown(PointF(100f, 100f))
+        Thread.sleep(Delay.LONG_PRESS_CONFIRM)
+        sendMove(PointF(200f, 200f))
+        sendUp(PointF(250f, 250f))
+        verify(exactly = 0) { mockDispatcher.onFling(any(), any()); mockDispatcher.onDoubleTap(any()); mockDispatcher.onTap1(any()) }
+    }
+
+    @Test fun pinchCannotStartRemoteScrollInertia() {
+        val first = PointF(100f, 100f)
+        val second = PointF(300f, 100f)
+        sendDown(first)
+        sendEvent(Factory.obtainPointerDownEvent(downEvent, first, second))
+        sendEvent(Factory.obtainMoveEvent(downEvent, PointF(30f, 100f), PointF(370f, 100f)))
+        sendEvent(Factory.obtainPointerUpEvent(downEvent, PointF(30f, 100f), PointF(370f, 100f)))
+        sendUp(PointF(30f, 100f))
+        verify(exactly = 0) { mockDispatcher.onRemoteScrollEnd(any(), any(), false) }
+    }
+
+    @Test fun cancelSuppressesRemainingFingerUntilFreshDown() {
+        sendDown()
+        instrumentation.runOnMainSync { touchHandler.cancel() }
+        sendMove(PointF(150f, 150f))
+        sendUp()
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify(exactly = 0) { mockDispatcher.onTap1(any()); mockDispatcher.onSwipe1(any(), any(), any(), any()) }
+        sendDown()
+        sendUp()
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify(exactly = 1) { mockDispatcher.onTap1(testPoint) }
     }
 
     /************************* Mouse Tests *******************************************************/
@@ -410,6 +456,127 @@ class TouchHandlerTest {
         runSwipeVsScaleTest(Point(-3, 10), Point(3, 10), EXPECT_NONE) // 30-45 degree
     }
 
+
+    @Test
+    fun swipeAcrossZeroDegreesIsNotPinch() {
+        runSwipeVsScaleTest(Point(10, -1), Point(10, 1), EXPECT_SWIPE)
+    }
+
+    @Test
+    fun tinyTwoFingerJitterDoesNotScrollOrScale() {
+        targetPrefs.edit { putString("gesture_swipe2", "remote-scroll") }
+        setup()
+        val p1 = PointF(300f, 300f)
+        val p2 = PointF(600f, 600f)
+        val jitter = ViewConfiguration.get(targetContext).scaledTouchSlop / 4f
+        sendDown(p1)
+        sendEvent(Factory.obtainPointerDownEvent(downEvent, p1, p2))
+        p1.offset(jitter, -jitter)
+        p2.offset(jitter, jitter)
+        sendEvent(Factory.obtainMoveEvent(downEvent, p1, p2))
+        sendEvent(Factory.obtainPointerUpEvent(downEvent, p1, p2))
+        sendUp(p1)
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify(exactly = 1) { mockDispatcher.onTap2(PointF(300f, 300f)) }
+        verify(exactly = 0) { mockDispatcher.onSwipe1(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onSwipe2(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onScale(any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onTap1(any()) }
+    }
+
+    @Test
+    fun remainingFingerCannotPanOrClickAfterScroll() {
+        targetPrefs.edit { putString("gesture_swipe2", "remote-scroll") }
+        setup()
+        val p1 = PointF(300f, 300f)
+        val p2 = PointF(600f, 600f)
+        sendDown(p1)
+        sendEvent(Factory.obtainPointerDownEvent(downEvent, p1, p2))
+        p1.offset(100f, 100f)
+        p2.offset(100f, 100f)
+        sendEvent(Factory.obtainMoveEvent(downEvent, p1, p2))
+        sendEvent(Factory.obtainPointerUpEvent(downEvent, p1, p2))
+        p1.offset(100f, 100f)
+        sendMove(p1)
+        sendUp(p1)
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify { mockDispatcher.onSwipe2(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onSwipe1(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onTap1(any()) }
+        verify(exactly = 0) { mockDispatcher.onTap2(any()) }
+        verify(exactly = 0) { mockDispatcher.onFling(any(), any()) }
+    }
+
+    @Test
+    fun pinchCannotTurnIntoScrollOrTap() {
+        targetPrefs.edit { putString("gesture_swipe2", "remote-scroll") }
+        setup()
+        val p1 = PointF(300f, 300f)
+        val p2 = PointF(600f, 600f)
+        sendDown(p1)
+        sendEvent(Factory.obtainPointerDownEvent(downEvent, p1, p2))
+        repeat(3) {
+            p1.offset(-100f, -100f)
+            p2.offset(100f, 100f)
+            sendEvent(Factory.obtainMoveEvent(downEvent, p1, p2))
+        }
+        repeat(3) {
+            p1.offset(100f, 100f)
+            p2.offset(100f, 100f)
+            sendEvent(Factory.obtainMoveEvent(downEvent, p1, p2))
+        }
+        sendEvent(Factory.obtainPointerUpEvent(downEvent, p1, p2))
+        sendMove(PointF(p1.x + 100f, p1.y))
+        sendUp(p1)
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify { mockDispatcher.onScale(any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onSwipe2(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onSwipe1(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onTap1(any()) }
+        verify(exactly = 0) { mockDispatcher.onTap2(any()) }
+    }
+
+    @Test
+    fun scrollCannotTurnIntoPinch() {
+        targetPrefs.edit { putString("gesture_swipe2", "remote-scroll") }
+        setup()
+        val p1 = PointF(300f, 300f)
+        val p2 = PointF(600f, 600f)
+        sendDown(p1)
+        sendEvent(Factory.obtainPointerDownEvent(downEvent, p1, p2))
+        p1.offset(100f, 100f)
+        p2.offset(100f, 100f)
+        sendEvent(Factory.obtainMoveEvent(downEvent, p1, p2))
+        repeat(3) {
+            p1.offset(-150f, -150f)
+            p2.offset(150f, 150f)
+            sendEvent(Factory.obtainMoveEvent(downEvent, p1, p2))
+        }
+        verify { mockDispatcher.onSwipe2(any(), any(), any(), any()) }
+        verify(exactly = 0) { mockDispatcher.onScale(any(), any(), any()) }
+    }
+
+    @Test
+    fun cancelRemovesDelayedSingleTap() {
+        sendDown()
+        sendUp()
+        instrumentation.runOnMainSync { touchHandler.cancel() }
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify(exactly = 0) { mockDispatcher.onTap1(any()) }
+    }
+
+    @Test
+    fun cancelRemovesLongPressAndAllowsNewGesture() {
+        sendDown()
+        instrumentation.runOnMainSync { touchHandler.cancel() }
+        Thread.sleep(Delay.LONG_PRESS_CONFIRM)
+        verify(exactly = 0) { mockDispatcher.onLongPress(any()) }
+        verify { mockDispatcher.onGestureCancel() }
+        sendDown()
+        sendUp()
+        Thread.sleep(Delay.SINGLE_TAP_CONFIRM)
+        verify(exactly = 1) { mockDispatcher.onTap1(testPoint) }
+    }
 
     /************************ Event Generation ***************************************************/
     object Factory {

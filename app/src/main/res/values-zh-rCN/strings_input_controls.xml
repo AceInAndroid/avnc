@@ -1,0 +1,22 @@
+<resources>
+    <string name="pref_system_keyboard">使用安卓输入法</string>
+    <string name="pref_system_keyboard_summary">关闭后使用内置电脑键盘，中文通过远端输入法输入。</string>
+    <string name="pref_restore_input">恢复推荐操作</string>
+    <string name="pref_restore_input_summary">长按拖动、双指轻点右击、单指移动画面、双指滚动</string>
+    <string name="pref_gesture_action_left_drag">按住左键并拖动</string>
+    <string name="pref_remote_scroll_inertia">远端滚动惯性</string>
+    <string name="pref_remote_scroll_inertia_summary">双指快速滑动后短暂继续滚动，再次触摸立即停止。</string>
+    <string name="msg_mouse_gesture_help">轻点左击，双击鼠标双击。长按后拖动，或双击后按住拖动。双指轻点右击，双指滑动滚动，捏合缩放。单指滑动移动画面。键盘由你手动开启和关闭。</string>
+    <string name="msg_input_restored">已恢复推荐操作</string>
+    <string name="touchpad_title">触控板</string>
+    <string name="touchpad_move">拖动把手调整触控板位置</string>
+    <string name="touchpad_surface">滑动移动 · 长按拖动\n双指：轻点右击 · 滑动滚动</string>
+    <string name="touchpad_needs_space">空间不足，请手动收起键盘或增大窗口。</string>
+    <string name="mouse_drag_active">正在拖动 · 抬手释放</string>
+    <string name="touchpad_left">左键</string>
+    <string name="touchpad_right">右键</string>
+    <string name="touchpad_scroll">滚动</string>
+    <string name="touchpad_collapse">收起触控板</string>
+    <string name="touchpad_expand">展开触控板</string>
+    <string name="touchpad_toggle">显示或隐藏浮动触控板</string>
+</resources>

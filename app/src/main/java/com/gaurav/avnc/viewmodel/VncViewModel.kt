@@ -403,7 +403,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
         if (activeViewMode.value != newMode) {
             activeViewMode.value = newMode
-            client?.setInputDisabled(newMode == ServerProfile.VIEW_MODE_NO_INPUT)
+            messenger?.setInputDisabled(newMode == ServerProfile.VIEW_MODE_NO_INPUT)
             setFrameBufferUpdatesPaused(newMode == ServerProfile.VIEW_MODE_NO_VIDEO)
             resolveGestureStyle()
         }

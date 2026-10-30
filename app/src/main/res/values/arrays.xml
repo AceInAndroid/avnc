@@ -85,6 +85,7 @@
 
     <string-array name="long_press_action_entries">
         <item>@string/pref_gesture_action_none</item>
+        <item>@string/pref_gesture_action_left_drag</item>
         <item>@string/pref_gesture_action_double_click</item>
         <item>@string/pref_gesture_action_middle_click</item>
         <item>@string/pref_gesture_action_right_click</item>
@@ -92,6 +93,7 @@
     </string-array>
     <string-array name="long_press_action_values">
         <item>none</item>
+        <item>left-drag</item>
         <item>double-click</item>
         <item>middle-click</item>
         <item>right-click</item>

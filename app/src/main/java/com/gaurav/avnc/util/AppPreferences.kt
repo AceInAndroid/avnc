@@ -48,24 +48,32 @@ class AppPreferences(context: Context) {
     inner class Gesture {
         val style; get() = prefs.getString("gesture_style", "touchscreen")!!
         val tap1 = "left-click" //Preference UI was removed
-        val tap2; get() = prefs.getString("gesture_tap2", "open-keyboard")!!
+        val tap2; get() = prefs.getString("gesture_tap2", "right-click")!!
         val tap3; get() = prefs.getString("gesture_tap3", "none")!!
         val doubleTap; get() = prefs.getString("gesture_double_tap", "double-click")!!
-        val longPress; get() = prefs.getString("gesture_long_press", "right-click")!!
+        val longPress; get() = prefs.getString("gesture_long_press", "left-drag")!!
         val swipe1; get() = prefs.getString("gesture_swipe1", "pan")!!
-        val swipe2; get() = prefs.getString("gesture_swipe2", "pan")!!
+        val swipe2; get() = prefs.getString("gesture_swipe2", "remote-scroll")!!
         val swipe3; get() = prefs.getString("gesture_swipe3", "pan")!!
         val doubleTapSwipe; get() = prefs.getString("gesture_double_tap_swipe", "remote-drag")!!
         val longPressSwipe; get() = prefs.getString("gesture_long_press_swipe", "none")!!
-        val longPressSwipeEnabled; get() = (longPressSwipe != "none" && longPress != "left-press")
+        val longPressSwipeEnabled; get() = (longPressSwipe != "none" && longPress != "left-press" && longPress != "left-drag")
         val longPressDetectionEnabled; get() = (longPress != "none" || longPressSwipeEnabled)
         val swipeSensitivity; get() = prefs.getInt("gesture_swipe_sensitivity", 10) / 10f
         val invertVerticalScrolling; get() = prefs.getBoolean("invert_vertical_scrolling", false)
+        val remoteScrollInertia; get() = prefs.getBoolean("remote_scroll_inertia", true)
         val quickTap1Enabled; get() = ((doubleTap == "none" || doubleTap == "double-click") && doubleTapSwipe == "none")
     }
 
     inner class Input {
         val gesture = Gesture()
+        val useSystemKeyboard; get() = prefs.getBoolean("use_system_keyboard", false)
+        var controlsCollapsed by BooleanPref("controls_collapsed", false)
+        var hasShownControlHelp by BooleanPref("control_help_shown", false)
+        var showTouchpad by BooleanPref("show_touchpad", false)
+        var touchpadCollapsed by BooleanPref("touchpad_collapsed", false)
+        var touchpadX by FloatPref("touchpad_x", 1f)
+        var touchpadY by FloatPref("touchpad_y", 1f)
 
         val vkOpenWithKeyboard; get() = prefs.getBoolean("vk_open_with_keyboard", false)
         val vkShowAll; get() = prefs.getBoolean("vk_show_all", false)
@@ -100,7 +108,7 @@ class AppPreferences(context: Context) {
     inner class RunInfo {
         var hasShownViewerHelp by BooleanPref("run_info_has_shown_viewer_help", false)
         var hasShownV3WelcomeMsg by BooleanPref("run_info_has_shown_v3_welcome_msg", false)
-        var showVirtualKeys by BooleanPref("run_info_show_virtual_keys", true)
+        var showVirtualKeys by BooleanPref("run_info_show_virtual_keys", false)
         var virtualKeysTextBoxVisible by BooleanPref("run_info_virtual_keys_textbox_visible", false)
         var toolbarOpenerBtnVerticalBias by FloatPref("run_info_toolbar_opener_vertical_bias", .5f)
     }
@@ -110,6 +118,25 @@ class AppPreferences(context: Context) {
     val input = Input()
     val server = Server()
     val runInfo = RunInfo()
+
+    fun restoreRecommendedInput() {
+        prefs.edit {
+            putString("gesture_style", "touchscreen")
+            putString("gesture_swipe1", "pan")
+            putString("gesture_swipe2", "remote-scroll")
+            putString("gesture_tap2", "right-click")
+            putString("gesture_double_tap", "double-click")
+            putString("gesture_long_press", "left-drag")
+            putString("gesture_double_tap_swipe", "remote-drag")
+            putString("gesture_long_press_swipe", "none")
+            putInt("gesture_swipe_sensitivity", 10)
+            putBoolean("invert_vertical_scrolling", false)
+            putBoolean("remote_scroll_inertia", true)
+            putBoolean("use_system_keyboard", false)
+            putBoolean("show_touchpad", false)
+            putBoolean("controls_collapsed", false)
+        }
+    }
 
     /****************************** Helpers *******************************/
     open inner class Pref<T>(private val getter: SharedPreferences.() -> T, private val setter: SharedPreferences.Editor.(T) -> Unit) {

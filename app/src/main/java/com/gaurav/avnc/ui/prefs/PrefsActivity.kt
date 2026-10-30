@@ -17,9 +17,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreference
+import androidx.preference.ListPreference
+import androidx.preference.SeekBarPreference
 import com.gaurav.avnc.R
 import com.gaurav.avnc.util.DeviceAuthPrompt
 import com.gaurav.avnc.util.EdgeToEdgeHelper
+import com.gaurav.avnc.util.AppPreferences
+import android.widget.Toast
 import com.google.android.material.appbar.MaterialToolbar
 
 class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
@@ -106,6 +110,22 @@ class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreference
             super.onCreate(savedInstanceState)
             preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(prefChangeListener)
 
+            findPreference<Preference>("restore_recommended_input")!!.setOnPreferenceClickListener {
+                AppPreferences(requireContext()).restoreRecommendedInput()
+                val values = preferenceManager.sharedPreferences!!
+                listOf("gesture_style", "gesture_swipe1", "gesture_swipe2", "gesture_tap2",
+                        "gesture_double_tap", "gesture_long_press", "gesture_double_tap_swipe",
+                        "gesture_long_press_swipe").forEach { key ->
+                    findPreference<ListPreference>(key)?.value = values.getString(key, null)
+                }
+                findPreference<SwitchPreference>("remote_scroll_inertia")!!.isChecked = true
+                findPreference<SwitchPreference>("use_system_keyboard")!!.isChecked = false
+                findPreference<SwitchPreference>("invert_vertical_scrolling")!!.isChecked = false
+                findPreference<SeekBarPreference>("gesture_swipe_sensitivity")!!.value = 10
+                Toast.makeText(requireContext(), R.string.msg_input_restored, Toast.LENGTH_SHORT).show()
+                true
+            }
+
             val canChangePtrIcon = Build.VERSION.SDK_INT >= 24
             if (!canChangePtrIcon) {
                 findPreference<SwitchPreference>("hide_local_cursor")!!.apply {
@@ -123,14 +143,14 @@ class PrefsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreference
                 disabledStateSummary = getString(R.string.pref_gesture_action_move_pointer)
             }
             findPreference<ListPreferenceEx>("gesture_long_press_swipe")!!.apply {
-                enableIf { it["gesture_long_press"] != "left-press" }
+                enableIf { it["gesture_long_press"] !in listOf(null, "left-press", "left-drag") }
                 disabledStateSummary = getText(R.string.pref_long_press_swipe_disabled_summary)
             }
 
             // To reduce clutter & avoid 'UI overload', pref to invert vertical scrolling is
             // only visible when 'Scroll remote content' option is used.
             findPreference<SwitchPreference>("invert_vertical_scrolling")!!.apply {
-                showIf { it.values.contains("remote-scroll") }
+                showIf { it["gesture_swipe2"] == null || it.values.contains("remote-scroll") }
             }
         }
 

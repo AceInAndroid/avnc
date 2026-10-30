@@ -27,6 +27,7 @@ import com.gaurav.avnc.viewmodel.VncViewModel
 class InputView(context: Context?, attrs: AttributeSet? = null) : View(context, attrs) {
 
     private var inputHandler: InputHandler? = null
+    var controlGestureInterceptor: ((MotionEvent) -> Boolean)? = null
 
     /**
      * Input connection used for intercepting key events
@@ -70,7 +71,7 @@ class InputView(context: Context?, attrs: AttributeSet? = null) : View(context, 
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        return inputHandler?.onTouchEvent(event) == true
+        return controlGestureInterceptor?.invoke(event) == true || inputHandler?.onTouchEvent(event) == true
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {

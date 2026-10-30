@@ -31,8 +31,16 @@ abstract class BasePointerMode(val viewModel: VncViewModel) {
     abstract fun doMovePointer(p: PointF, dx: Float, dy: Float)
     abstract fun doRemoteDrag(button: PointerButton, p: PointF, dx: Float, dy: Float)
 
-    open fun onGestureStart() {}
-    open fun onGestureStop(p: PointF) = doButtonRelease(p)
+    open fun onGestureStart() = resetScroll()
+    open fun onGestureStop(p: PointF) {
+        doButtonRelease(p)
+        resetScroll()
+    }
+
+    fun resetScroll() {
+        accumulatedDx = 0f
+        accumulatedDy = 0f
+    }
 
     fun doButtonDown(button: PointerButton, p: PointF) {
         transformPoint(p)?.let { viewModel.messenger?.sendPointerButtonDown(button, it) }
@@ -179,11 +187,16 @@ class RelativePointerMode(viewModel: VncViewModel, private val accelerator: Poin
         }
         doButtonDown(PointerButton.None, pointerPosition)
 
-        //Try to keep the pointer centered on screen
-        val vp = viewModel.frameState.toVP(pointerPosition)
-        val centerDiffX = viewModel.frameState.safeArea.centerX() - vp.x
-        val centerDiffY = viewModel.frameState.safeArea.centerY() - vp.y
-        viewModel.panFrame(centerDiffX, centerDiffY)
+        // Pan only enough to keep the cursor visible, preserving the user's working area.
+        val fs = viewModel.frameState
+        val vp = fs.toVP(pointerPosition)
+        val safe = fs.safeArea
+        val margin = 32f * viewModel.getApplication<android.app.Application>().resources.displayMetrics.density
+        fun correction(p: Float, low: Float, high: Float): Float {
+            val inset = margin.coerceAtMost((high - low).coerceAtLeast(0f) / 2f)
+            return p.coerceIn(low + inset, high - inset) - p
+        }
+        viewModel.panFrame(correction(vp.x, safe.left, safe.right), correction(vp.y, safe.top, safe.bottom))
     }
 
     override fun doRemoteDrag(button: PointerButton, p: PointF, dx: Float, dy: Float) {

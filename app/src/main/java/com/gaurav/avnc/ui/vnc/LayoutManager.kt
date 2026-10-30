@@ -193,6 +193,7 @@ class LayoutManager(private val activity: VncActivity) {
      *
      ************************************************************************************/
     private var windowInsets = WindowInsetsCompat.Builder().build()
+    private var imeWasVisible = false
     private var virtualKeyInsets = Insets.NONE   // Insets caused by virtual keys
 
     private fun updateWindowInsets(insetsCompat: WindowInsetsCompat) {
@@ -234,12 +235,22 @@ class LayoutManager(private val activity: VncActivity) {
         applySafeAreaInsets(maxSafeAreaInsets)
 
         activity.toolbar.handleInsets(windowInsets)
+        val cutout = windowInsets.getInsets(Type.displayCutout())
+        val legacyKeys = activity.virtualKeys.container?.takeIf { it.isVisible }?.height ?: 0
+        activity.binding.touchpadHost.updatePadding(cutout.left, cutout.top, cutout.right, max(cutout.bottom, legacyKeys))
+        activity.floatingTouchpad.reposition()
     }
 
     private fun applyOpaqueInsets(opaqueInsets: Insets) {
-        // Guess if IME is closing
-        if (!windowInsets.isVisible(Type.ime()) && rootView.paddingBottom != 0)
-            activity.virtualKeys.onKeyboardClose()
+        // Navigation-bar padding and keyboard animations are not IME close events.
+        // Follow actual visibility transitions so a pending IME opening cannot hide
+        // the auxiliary keys immediately after showKeyboard() made them visible.
+        val imeVisible = windowInsets.isVisible(Type.ime())
+        if (imeVisible != imeWasVisible) {
+            if (imeVisible && !activity.computerKeyboard.isVisible) activity.virtualKeys.onKeyboardOpen()
+            else if (!imeVisible) activity.virtualKeys.onKeyboardClose()
+            imeWasVisible = imeVisible
+        }
 
         val insets = windowInsetsToViewInsets(opaqueInsets, rootView)
         if (rootView.paddingRight != insets.right || rootView.paddingBottom != insets.bottom)
@@ -253,7 +264,9 @@ class LayoutManager(private val activity: VncActivity) {
                             frameView.width - insets.right,
                             frameView.height - insets.bottom)
 
-        viewModel.setSafeArea(RectF(safeArea))
+        val newSafeArea = RectF(safeArea)
+        if (viewModel.frameState.safeArea != newSafeArea) activity.releaseInputControls()
+        viewModel.setSafeArea(newSafeArea)
     }
 
     /**

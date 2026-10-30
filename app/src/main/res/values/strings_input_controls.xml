@@ -1,0 +1,23 @@
+<!-- English fallback is intentional for locales other than the supplied en/zh-CN controls. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="pref_system_keyboard">Use Android keyboard</string>
+    <string name="pref_system_keyboard_summary">Off: use the built-in computer keyboard. Chinese input uses the remote input method.</string>
+    <string name="pref_restore_input">Restore recommended controls</string>
+    <string name="pref_restore_input_summary">Long press to drag, two-finger tap to right-click, swipe to pan, two fingers to scroll</string>
+    <string name="pref_gesture_action_left_drag">Hold left button and drag</string>
+    <string name="pref_remote_scroll_inertia">Remote scroll inertia</string>
+    <string name="pref_remote_scroll_inertia_summary">Keep scrolling briefly after a quick two-finger swipe. Touch again to stop.</string>
+    <string name="msg_mouse_gesture_help">Tap to click; double-tap to double-click. Long press and drag, or double-tap and hold to drag. Two-finger tap right-clicks; two-finger swipe scrolls; pinch zooms. Swipe with one finger to pan the view. Open and close the keyboard manually.</string>
+    <string name="msg_input_restored">Recommended controls restored</string>
+    <string name="touchpad_title">Touchpad</string>
+    <string name="touchpad_move">Drag to reposition touchpad</string>
+    <string name="touchpad_surface">Slide to move · Hold to drag\nTwo fingers: tap right-click · slide scroll</string>
+    <string name="touchpad_needs_space">Not enough space. Close the keyboard manually or enlarge the window.</string>
+    <string name="mouse_drag_active">Dragging · Lift finger to release</string>
+    <string name="touchpad_left">Left</string>
+    <string name="touchpad_right">Right</string>
+    <string name="touchpad_scroll">Scroll</string>
+    <string name="touchpad_collapse">Collapse touchpad</string>
+    <string name="touchpad_expand">Open touchpad</string>
+    <string name="touchpad_toggle">Show or hide floating touchpad</string>
+</resources>
