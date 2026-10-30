@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="computer_keyboard_function_keys">F1–F12 function keys. Swipe horizontally for more keys.</string>
+    <string name="computer_keyboard_navigation">Nav</string>
+</resources>

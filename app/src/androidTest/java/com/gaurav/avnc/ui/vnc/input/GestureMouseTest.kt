@@ -270,8 +270,10 @@ class GestureMouseTest {
                 dispatcher.onSwipe2(start, start, delta.x * density, delta.y * density)
                 dispatcher.onGestureStop(start)
             }
-            masks.add(mask)
-            masks.add(0)
+            repeat(4) {
+                masks.add(mask)
+                masks.add(0)
+            }
             pollingAssert { assertEquals(masks, session.server.receivedPointerEvents.map { it.mask }) }
         }
     }
@@ -286,12 +288,13 @@ class GestureMouseTest {
                 it.viewModel.profile.remoteInputOverrides = "{\"axisLock\":false}"
                 it.applyRemoteInputSettings()
                 dispatcher.onVirtualPointerStart()
-                // 5 dp at 2x sensitivity exceeds the new 8 dp tick threshold.
+                // A short 5dp gesture at 2x produces five ticks along each axis.
                 dispatcher.onVirtualPointerScroll(5f, 5f)
                 dispatcher.onVirtualPointerStop()
             }
             pollingAssert {
-                assertEquals(listOf(32, 0, 16, 0), session.server.receivedPointerEvents.map { it.mask })
+                assertEquals(List(5) { listOf(32, 0, 16, 0) }.flatten(),
+                        session.server.receivedPointerEvents.map { it.mask })
             }
         }
     }
@@ -310,7 +313,7 @@ class GestureMouseTest {
         val ticks = session.server.receivedPointerEvents.filter { it.mask != 0 }
         assertTrue(ticks.any { it.mask == 32 }) // WheelLeft
         assertTrue(ticks.any { it.mask == 8 }) // WheelUp
-        assertTrue(ticks.size <= 4)
+        assertTrue("A pathological input must have a bounded drain", ticks.size <= 48)
         assertTrue(session.server.receivedPointerEvents.all { it.x in 0..1599 && it.y in 0..1199 })
         val count = session.server.receivedPointerEvents.size
         Thread.sleep(100)
@@ -326,7 +329,9 @@ class GestureMouseTest {
             dispatcher.onRemoteScrollEnd(3500f * density, 3500f * density)
             dispatcher.onGestureStop(start)
         }
-        pollingAssert { assertTrue(session.server.receivedPointerEvents.count { it.mask != 0 } > 4) }
+        // The physical 40dp movement on both axes accounts for 40 ticks. Require more
+        // than that so this proves momentum, rather than just draining touch movement.
+        pollingAssert { assertTrue(session.server.receivedPointerEvents.count { it.mask != 0 } > 40) }
         session.onActivity { dispatcher.onGestureStart() }
         flush(session, dispatcher)
         val stopped = session.server.receivedPointerEvents.size

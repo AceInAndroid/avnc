@@ -192,8 +192,13 @@ class RelativePointerMode(viewModel: VncViewModel, private val accelerator: Poin
         var ady = dy
         if (accelerate) {
             accelerator.compute()
-            adx = accelerator.updateDx(dx)
-            ady = accelerator.updateDy(dy)
+            if (viewModel.remoteInputConfig.isMac) {
+                val gain = accelerator.vectorFactor()
+                adx *= gain; ady *= gain
+            } else {
+                adx = accelerator.updateDx(dx)
+                ady = accelerator.updateDy(dy)
+            }
         }
 
         pointerPosition.apply {

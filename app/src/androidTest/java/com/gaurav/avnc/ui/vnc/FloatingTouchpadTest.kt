@@ -91,6 +91,24 @@ class FloatingTouchpadTest : VncSessionTest() {
         assertTrue(vncSession.server.receivedPointerEvents.all { it.x in 0..9 && it.y in 0..9 })
     }
 
+    @Test fun smallSurfaceMotionBelowSystemTouchSlopStillMovesWithoutClicking() {
+        vncSession = com.gaurav.avnc.VncSessionScenario(com.gaurav.avnc.TestServer(width = 1600, height = 1200))
+        vncSession.run {
+            vncSession.onActivity { activity ->
+                val surface = activity.findViewById<View>(R.id.touchpad_surface)
+                val density = activity.resources.displayMetrics.density
+                val down = SystemClock.uptimeMillis()
+                val travel = minOf(2f * density, ViewConfiguration.get(activity).scaledTouchSlop * .75f)
+                assertTrue(travel > density)
+                touch(surface, MotionEvent.ACTION_DOWN, 20f, 20f, down)
+                touch(surface, MotionEvent.ACTION_MOVE, 20f + travel, 20f, down)
+                touch(surface, MotionEvent.ACTION_UP, 20f + travel, 20f, down)
+            }
+            pollingAssert { assertTrue(vncSession.server.receivedPointerEvents.last().x in 4..6) }
+        }
+        assertTrue(vncSession.server.receivedPointerEvents.all { it.mask == 0 })
+    }
+
     @Test fun surfaceMovementUsesThreeRemotePixelsPerDpWithoutClicking() {
         vncSession = com.gaurav.avnc.VncSessionScenario(com.gaurav.avnc.TestServer(width = 1600, height = 1200))
         vncSession.run {
@@ -347,6 +365,9 @@ class FloatingTouchpadTest : VncSessionTest() {
     }
 
     @Test fun remoteScrollCoversBothAxesAndDiscardsRemainderBetweenGestures() {
+        // Exercise wheel fractions independently of direction-lock activation and momentum.
+        vncSession.profile.remoteInputOverrides = com.gaurav.avnc.model.RemoteInputOverrides(
+                axisLock = false, inertia = "off").encode()
         vncSession.run {
             lateinit var dispatcher: com.gaurav.avnc.ui.vnc.input.Dispatcher
             lateinit var point: PointF
@@ -356,20 +377,20 @@ class FloatingTouchpadTest : VncSessionTest() {
                 density = activity.resources.displayMetrics.density
                 point = activity.viewModel.frameState.toVP(PointF(4f, 4f))
                 dispatcher.onGestureStart()
-                dispatcher.onSwipe2(point, point, 12f * density, 12f * density)
+                dispatcher.onSwipe2(point, point, 3f * density, 3f * density)
             }
             pollingAssert { assertEquals(listOf(32, 0, 8, 0), vncSession.server.receivedPointerEvents.map { it.mask }) }
             vncSession.onActivity {
-                dispatcher.onSwipe2(point, point, -16f * density, -16f * density)
+                dispatcher.onSwipe2(point, point, -2f * density, -2f * density)
                 dispatcher.onGestureStop(point)
             }
             pollingAssert { assertEquals(listOf(32, 0, 8, 0, 64, 0, 16, 0), vncSession.server.receivedPointerEvents.map { it.mask }) }
-            // 6 dp is below the 8 dp threshold: separate completed sessions must
+            // 1 dp is below the 2 dp threshold: separate completed sessions must
             // discard their fraction rather than accumulating an extra wheel event.
             repeat(2) {
                 vncSession.onActivity {
                     dispatcher.onGestureStart()
-                    dispatcher.onSwipe2(point, point, 6f * density, 6f * density)
+                    dispatcher.onSwipe2(point, point, 1f * density, 1f * density)
                     dispatcher.onGestureStop(point)
                 }
                 // Each normal end must get its animation frame before the next begin.

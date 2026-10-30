@@ -12,6 +12,7 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import com.gaurav.avnc.viewmodel.VncViewModel
 import kotlin.math.absoluteValue
+import kotlin.math.hypot
 
 /**
  * Implements pointer acceleration for Touchpad gesture style.
@@ -35,6 +36,13 @@ class PointerAcceleration(private val viewModel: VncViewModel) {
 
     fun compute() {
         tracker.computeCurrentVelocity(1000 /*per second*/)
+    }
+
+    /** One gain for the velocity vector, so diagonal motion keeps its original direction. */
+    fun vectorFactor(): Float {
+        val speed = hypot(pixelToMM(tracker.xVelocity, xdpi), pixelToMM(tracker.yVelocity, ydpi))
+        return if (viewModel.videoDisabled) NoVideoTouchpadProfile.calculateAccelerationFactor(speed)
+        else TouchpadProfile.calculateAccelerationFactor(speed, viewModel.frameState.zoomScale)
     }
 
     fun updateDx(dx: Float): Float {

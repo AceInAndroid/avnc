@@ -56,7 +56,7 @@ drag, hold near a viewport edge to reveal more of the desktop. Quick two-finger
 scrolling continues briefly after release; touch again to stop, or adjust inertia under Remote system optimization in Settings. Existing saved gesture preferences are preserved;
 Settings → Input → Restore recommended controls applies these defaults.
 
-The keyboard button opens the built-in computer keyboard. Use ABC, 123 and Fn to switch pages; the 123 page includes a second symbol set. Tap a modifier for the next key, or hold it to lock;
+The keyboard button opens the built-in computer keyboard. F1–F12 stay visible above the letter keys; swipe the function row horizontally on narrow screens. Use ABC, 123 and Nav to switch pages; the 123 page includes a second symbol set. Tap a modifier for the next key, or hold it to lock;
 tap it again to release. Chinese text is composed by the remote computer's input
 method. Open it using the keyboard button and close it using its close button or
 Back; mouse gestures never automatically open or hide it. Settings → Input → Use
@@ -124,11 +124,11 @@ Choose the remote system in a connection's editor or More → Controls for this 
 Automatic detects Apple's Screen Sharing handshake; other servers use Generic until
 you select their system. Settings → Remote system optimization edits separate Mac,
 Windows and Generic templates. Each computer can override pointer/scroll speeds
-(0.25–3×), scroll direction, horizontal gain, acceleration, inertia and axis lock.
+(pointer 0.25–3×, scroll 0.25–6×), scroll direction, horizontal gain, acceleration, inertia and axis lock.
 Explicitly saved earlier input settings are migrated once. Local view pan sensitivity
 is separate from remote pointer/scroll speed. Physical wheels share speeds and direction, without touch inertia or axis lock.
 
-Mac uses Command/Option/Control labels and shortcuts, with longer scroll inertia.
+Mac uses Command/Option/Control labels and shortcuts, velocity-sensitive pointer acceleration by default and longer scroll inertia. Touch scrolling starts at one wheel tick per 2dp, with frame-paced delivery and a short bounded queue; physical mouse wheels keep their original baseline. Standard VNC wheels remain discrete and cannot reproduce native pixel-scroll phases or pressure/haptic feedback.
 Windows uses Ctrl/Alt/Win, short inertia, Task View and window snapping shortcuts.
 On either platform, swipe three fingers left/right for next/previous desktop, up for
 overview and down to show the desktop. A third finger added after scrolling, pinching

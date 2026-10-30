@@ -69,14 +69,14 @@ data class RemoteInputConfig(
     val isMac get() = platform == RemotePlatform.MAC
     val effectiveHorizontalSpeed get() = horizontalSpeed ?: scrollSpeed
     val systemGestures get() = threeFinger == "system" && platform in listOf(RemotePlatform.MAC, RemotePlatform.WINDOWS)
-    val inertiaDecay get() = if (inertia == "short") .100f else .180f
-    val inertiaDuration get() = if (inertia == "short") 400L else 700L
+    val inertiaDecay get() = if (inertia == "short") .100f else if (isMac) .240f else .180f
+    val inertiaDuration get() = if (inertia == "short") 400L else if (isMac) 1000L else 700L
 
     fun apply(overrides: RemoteInputOverrides): RemoteInputConfig {
-        fun speed(value: Float?, fallback: Float) = value?.takeIf { it.isFinite() }?.coerceIn(.25f, 3f) ?: fallback
+        fun speed(value: Float?, fallback: Float, max: Float = 3f) = value?.takeIf { it.isFinite() }?.coerceIn(.25f, max) ?: fallback
         return copy(pointerSpeed = speed(overrides.pointerSpeed, pointerSpeed),
-                scrollSpeed = speed(overrides.scrollSpeed, scrollSpeed),
-                horizontalSpeed = overrides.horizontalSpeed?.takeIf { it.isFinite() }?.coerceIn(.25f, 3f) ?: horizontalSpeed,
+                scrollSpeed = speed(overrides.scrollSpeed, scrollSpeed, 6f),
+                horizontalSpeed = overrides.horizontalSpeed?.takeIf { it.isFinite() }?.coerceIn(.25f, 6f) ?: horizontalSpeed,
                 invertVertical = overrides.invertVertical ?: invertVertical,
                 invertHorizontal = overrides.invertHorizontal ?: invertHorizontal,
                 acceleration = overrides.acceleration ?: acceleration,
@@ -134,6 +134,7 @@ data class RemoteInputConfig(
 
     companion object {
         fun defaults(platform: RemotePlatform) = RemoteInputConfig(platform = platform,
+                acceleration = platform == RemotePlatform.MAC,
                 inertia = if (platform == RemotePlatform.WINDOWS) "short" else "standard",
                 threeFinger = if (platform in listOf(RemotePlatform.MAC, RemotePlatform.WINDOWS)) "system" else "pan")
     }

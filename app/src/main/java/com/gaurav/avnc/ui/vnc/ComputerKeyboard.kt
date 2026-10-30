@@ -17,6 +17,7 @@ import android.view.ViewConfiguration
 import android.widget.LinearLayout
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.HorizontalScrollView
 import android.os.Build
 import androidx.core.view.isVisible
 import com.gaurav.avnc.R
@@ -207,6 +208,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
         if (activity.viewModel.remoteInputConfig.isMac)
             keysArea.addView(activity.toolbar.macControls.createRow(keyboard = true), LinearLayout.LayoutParams(-1, dp(48)))
+        addFunctionKeys()
         keysArea.addView(shortcuts)
         when (page) {
             Page.Common -> {
@@ -235,8 +237,6 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                 keysArea.addView(third)
             }
             Page.Functions -> {
-                addKeys((0..5).map { Key("F${it + 1}", KeyEvent.KEYCODE_F1 + it) })
-                addKeys((6..11).map { Key("F${it + 1}", KeyEvent.KEYCODE_F1 + it) })
                 val nav = row()
                 val caps = button("Caps").apply {
                     tag = "keyboard_key_${KeyEvent.KEYCODE_CAPS_LOCK}"
@@ -282,7 +282,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         }
         pageButton(Page.Common, "ABC", 1.25f)
         pageButton(Page.Symbols, "123", 1.25f)
-        pageButton(Page.Functions, "Fn", 1f)
+        pageButton(Page.Functions, activity.getString(R.string.computer_keyboard_navigation), 1f)
         bottom.addView(keyButton(characterKey(',')), cell(.8f))
         bottom.addView(keyButton(Key(activity.getString(R.string.computer_keyboard_space), KeyEvent.KEYCODE_SPACE)), cell(3.2f))
         bottom.addView(keyButton(characterKey('.')), cell(.8f))
@@ -385,6 +385,38 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         val row = row()
         keys.forEach { row.addView(keyButton(it), cell()) }
         keysArea.addView(row)
+    }
+
+    /** Keep desktop function keys visible on every page without shrinking their touch targets. */
+    private fun addFunctionKeys() {
+        val functionKeys = row(48)
+        val buttons = (0..11).map { index ->
+            keyButton(Key("F${index + 1}", KeyEvent.KEYCODE_F1 + index)).apply {
+                textSize = 12f
+                minimumWidth = dp(48)
+                functionKeys.addView(this, LinearLayout.LayoutParams(dp(48), -1).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                })
+            }
+        }
+        val scroll = HorizontalScrollView(activity).apply {
+            tag = "keyboard_function_row"
+            contentDescription = activity.getString(R.string.computer_keyboard_function_keys)
+            isFillViewport = true
+            isHorizontalScrollBarEnabled = true
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            isHorizontalFadingEdgeEnabled = true
+            setFadingEdgeLength(dp(16))
+            addView(functionKeys, FrameLayout.LayoutParams(-2, -1))
+            addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+                val keyWidth = maxOf(dp(48), (right - left) / buttons.size - dp(4))
+                buttons.forEach { button ->
+                    if (button.layoutParams.width != keyWidth)
+                        button.layoutParams = button.layoutParams.apply { width = keyWidth }
+                }
+            }
+        }
+        keysArea.addView(scroll, LinearLayout.LayoutParams(-1, dp(48)))
     }
 
     private fun keyButton(key: Key) = button(key.label, key.description).apply {

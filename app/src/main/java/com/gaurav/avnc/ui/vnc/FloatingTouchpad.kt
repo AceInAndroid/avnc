@@ -325,6 +325,7 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
     private fun installSurface(surface: View) {
         val config = ViewConfiguration.get(activity)
         val slop = config.scaledTouchSlop.toFloat()
+        val pointerSlop = minOf(slop, density)
         val doubleSlop = config.scaledDoubleTapSlop.toFloat()
         val handler = Handler(Looper.getMainLooper())
         var pendingTap: Runnable? = null
@@ -471,11 +472,8 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
                         movementOnly = true
                         val dx = e.x - last.x; val dy = e.y - last.y
                         last.set(e.x, e.y)
-                        if (moved) input.onVirtualPointerMove(dx / density, dy / density)
-                        else if (hypot(e.x - start.x, e.y - start.y) > slop) {
-                            moved = true
-                            input.onVirtualPointerMove((e.x - start.x) / density, (e.y - start.y) / density)
-                        }
+                        moved = moved || dx != 0f || dy != 0f
+                        input.onVirtualPointerMove(dx / density, dy / density)
                     } else if (multi) {
                         val focus = centroid(e)
                         if (focus == null || e.pointerCount != 2) {
@@ -497,7 +495,7 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
                         val dx = e.x - last.x; val dy = e.y - last.y
                         last.set(e.x, e.y)
                         if (dragging || moved) input.onVirtualPointerMove(dx / density, dy / density)
-                        else if (hypot(e.x - start.x, e.y - start.y) > slop) {
+                        else if (hypot(e.x - start.x, e.y - start.y) > if (secondTap) slop else pointerSlop) {
                             clearLongPress()
                             if (secondTap) startDrag() else moved = true
                             input.onVirtualPointerMove((e.x - start.x) / density, (e.y - start.y) / density)

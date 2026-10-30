@@ -298,9 +298,10 @@ object RemoteInputEditor {
                 val value = TextView(context).apply { text = speed(effective); textSize = 20f; gravity = Gravity.CENTER }
                 body.addView(value, LinearLayout.LayoutParams(-1, dp(48)))
                 var selected = effective
+                val maximum = if (tag == "pointer_speed") 3f else 6f
                 body.addView(SeekBar(context).apply {
-                    max = 55
-                    progress = ((effective.coerceIn(.25f, 3f) - .25f) / .05f).roundToInt()
+                    max = ((maximum - .25f) / .05f).roundToInt()
+                    progress = ((effective.coerceIn(.25f, maximum) - .25f) / .05f).roundToInt()
                     contentDescription = text(label)
                     minimumHeight = dp(48)
                     setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {

@@ -265,7 +265,7 @@ class Dispatcher(private val activity: VncActivity) {
     }
     fun onVirtualPointerMove(dx: Float, dy: Float) = virtualMode.doTouchMove(dx, dy)
     fun onVirtualPointerButton(button: PointerButton, down: Boolean) {
-        if (down) virtualMode.doButtonDown(button, PointF())
+        if (down) { stopRemoteScroll(); virtualMode.doButtonDown(button, PointF()) }
         else virtualMode.doButtonUp(button, PointF())
     }
     fun onVirtualPointerClick(button: PointerButton = PointerButton.Left, count: Int = 1) {

@@ -41,6 +41,10 @@ class RemoteInputPreferencesTest {
         assertEquals("short", prefs.template(RemotePlatform.WINDOWS).inertia)
         assertEquals("system", prefs.template(RemotePlatform.MAC).threeFinger)
         assertEquals("pan", prefs.template(RemotePlatform.GENERIC).threeFinger)
+        assertTrue(prefs.template(RemotePlatform.MAC).acceleration)
+        assertFalse(prefs.template(RemotePlatform.WINDOWS).acceleration)
+        prefs.saveTemplate(RemotePlatform.MAC, RemoteInputOverrides(acceleration = false))
+        assertFalse(prefs.template(RemotePlatform.MAC).acceleration)
         prefs.saveTemplate(RemotePlatform.MAC, RemoteInputOverrides(pointerSpeed = 2f))
         assertEquals(2f, prefs.template(RemotePlatform.MAC).pointerSpeed, 0f)
         assertEquals(1f, prefs.template(RemotePlatform.WINDOWS).pointerSpeed, 0f)
@@ -122,6 +126,9 @@ class RemoteInputPreferencesTest {
         assertEquals(3f, bounded.pointerSpeed, 0f)
         assertEquals(.25f, bounded.scrollSpeed, 0f)
         assertEquals(.25f, bounded.effectiveHorizontalSpeed, 0f)
+        val fast = template.apply(RemoteInputOverrides(scrollSpeed = 99f, horizontalSpeed = 5.5f))
+        assertEquals(6f, fast.scrollSpeed, 0f)
+        assertEquals(5.5f, fast.effectiveHorizontalSpeed, 0f)
     }
 
     @Test fun invalidShortcutEntriesDoNotReplaceValidDefaultsOrTemplate() {

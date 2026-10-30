@@ -146,6 +146,21 @@ class RemoteInputEditorTest : VncSessionTest() {
         assertTrue(vncSession.server.receivedKeySyms.isEmpty())
     }
 
+    @Test fun scrollSliderAllowsSixTimesWithoutChangingPointerRange() {
+        vncSession.run {
+            openComputerSettings()
+            onView(withTagValue(equalTo("remote_input_scroll_speed"))).inRoot(isDialog()).perform(scrollTo(), click())
+            onView(isAssignableFrom(SeekBar::class.java)).inRoot(isDialog()).perform(setProgress(115))
+            onView(withText(R.string.remote_input_apply)).inRoot(isDialog()).perform(click())
+            vncSession.onActivity {
+                assertEquals(6f, it.viewModel.remoteInputConfig.scrollSpeed, .001f)
+                assertEquals(1f, it.viewModel.remoteInputConfig.pointerSpeed, .001f)
+            }
+            closeComputerSettings()
+        }
+        assertTrue(vncSession.server.receivedPointerEvents.isEmpty())
+    }
+
     private fun setProgress(value: Int) = object : ViewAction {
         override fun getConstraints() = isAssignableFrom(SeekBar::class.java)
         override fun getDescription() = "Set pointer speed slider progress to $value"

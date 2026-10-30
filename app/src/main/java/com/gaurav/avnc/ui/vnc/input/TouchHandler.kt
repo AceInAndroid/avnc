@@ -353,6 +353,11 @@ class TouchHandler(private val inputView: View, private val dispatcher: Dispatch
                 MotionEvent.ACTION_MOVE, MotionEvent.ACTION_POINTER_UP -> {
                     val i1 = e.findPointerIndex(id1); val i2 = e.findPointerIndex(id2)
                     if (tracker != null && i1 >= 0 && i2 >= 0) {
+                        repeat(e.historySize) { h ->
+                            center.set((e.getHistoricalX(i1, h) + e.getHistoricalX(i2, h)) / 2,
+                                    (e.getHistoricalY(i1, h) + e.getHistoricalY(i2, h)) / 2)
+                            sample(e.getHistoricalEventTime(h), MotionEvent.ACTION_MOVE)
+                        }
                         center.set((e.getX(i1) + e.getX(i2)) / 2, (e.getY(i1) + e.getY(i2)) / 2)
                         sample(e.eventTime, MotionEvent.ACTION_MOVE)
                         if (e.actionMasked == MotionEvent.ACTION_POINTER_UP) {

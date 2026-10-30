@@ -95,6 +95,26 @@ class PlatformKeyboardTest : VncSessionTest() {
                 vncSession.server.receivedKeySyms)
     }
 
+    @Test fun macFunctionRowSendsPlainFunctionKeysWithoutModifierOrSystemAction() {
+        vncSession.run {
+            platform("mac")
+            vncSession.onActivity {
+                it.showKeyboard()
+                assertNotNull(it.computerKeyboard.container.findViewWithTag<View>("keyboard_function_row"))
+                assertFalse(isKeyboardVisible(it.binding.inputView))
+            }
+            for (code in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12) click(key(code))
+            click(key(KeyEvent.KEYCODE_CTRL_LEFT))
+            click(key(KeyEvent.KEYCODE_F3))
+            click(key(KeyEvent.KEYCODE_F4))
+        }
+        val plainKeys = (XKeySym.XK_F1..XKeySym.XK_F12).flatMap { listOf(it to true, it to false) }
+        assertEquals(plainKeys + listOf(XKeySym.XK_Control_L to true,
+                XKeySym.XK_F3 to true, XKeySym.XK_F3 to false, XKeySym.XK_Control_L to false,
+                XKeySym.XK_F4 to true, XKeySym.XK_F4 to false), vncSession.server.receivedKeySyms)
+        assertTrue(vncSession.server.receivedPointerEvents.isEmpty())
+    }
+
     private fun navigateText(platformValue: String) {
         vncSession.run {
             platform(platformValue)

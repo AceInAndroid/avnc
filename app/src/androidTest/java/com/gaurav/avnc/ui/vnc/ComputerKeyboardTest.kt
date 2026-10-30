@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.gaurav.avnc.CleanPrefsRule
 import com.gaurav.avnc.VncSessionTest
@@ -141,6 +142,71 @@ class ComputerKeyboardTest : VncSessionTest() {
                 'e'.code, XKeySym.XK_F12, XKeySym.XK_Home, XKeySym.XK_Left),
                 vncSession.server.receivedKeyDowns)
     }
+
+    @Test fun functionKeysHaveOnePersistentRowAndSendEveryFunctionKeyOnEveryPage() {
+        vncSession.run {
+            show()
+            listOf("common", "symbols", "functions").forEach { page ->
+                click("keyboard_page_$page")
+                vncSession.onActivity { activity ->
+                    val keyboard = activity.computerKeyboard.container
+                    val scroll = checkNotNull(keyboard.findViewWithTag<HorizontalScrollView>("keyboard_function_row"))
+                    assertTrue(scroll.isShown)
+                    val row = scroll.getChildAt(0) as ViewGroup
+                    assertEquals(12, row.childCount)
+                    for (index in 0..11) {
+                        assertEquals(key(KeyEvent.KEYCODE_F1 + index), row.getChildAt(index).tag)
+                        assertEquals(1, descendants(keyboard).count { it.tag == key(KeyEvent.KEYCODE_F1 + index) })
+                    }
+                }
+                for (code in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12) click(key(code))
+            }
+        }
+        val expected = List(3) { (XKeySym.XK_F1..XKeySym.XK_F12).toList() }.flatten()
+        assertEquals(expected, vncSession.server.receivedKeyDowns)
+        assertEquals(expected.flatMap { listOf(it to true, it to false) }, vncSession.server.receivedKeySyms)
+    }
+
+    @Test fun functionRowKeepsLargeTargetsAndScrollsOnNarrowScreens() {
+        vncSession.run {
+            show()
+            vncSession.onActivity { activity ->
+                val scroll = activity.computerKeyboard.container.findViewWithTag<HorizontalScrollView>("keyboard_function_row")
+                val density = activity.resources.displayMetrics.density
+                fun layout(widthDp: Int) {
+                    val width = (widthDp * density + .5f).toInt()
+                    val height = (48 * density + .5f).toInt()
+                    // The first layout updates equal key widths; the second measures those widths.
+                    repeat(2) {
+                        scroll.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+                        scroll.layout(0, 0, width, height)
+                    }
+                }
+                fun assertTargets() {
+                    val row = scroll.getChildAt(0) as ViewGroup
+                    val minimum = (48 * density + .5f).toInt()
+                    for (index in 0 until row.childCount) {
+                        assertTrue(row.getChildAt(index).width >= minimum)
+                        assertTrue(row.getChildAt(index).height >= minimum)
+                    }
+                }
+                layout(320)
+                assertTargets()
+                assertTrue(scroll.canScrollHorizontally(1))
+                scroll.scrollTo(scroll.getChildAt(0).width, 0)
+                assertTrue(scroll.scrollX > 0)
+                layout(760)
+                assertTargets()
+                scroll.scrollTo(0, 0)
+                assertFalse(scroll.canScrollHorizontally(1))
+                assertTrue(vncSession.server.receivedKeySyms.isEmpty())
+            }
+        }
+    }
+
+    private fun descendants(view: View): List<View> = listOf(view) +
+            if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
 
     @Test fun hideReleasesModifiersAndStopsHeldKeyRepeat() {
         vncSession.run {

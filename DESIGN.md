@@ -11,9 +11,10 @@
   corners. Recompute the held remote position each frame even with a stationary finger; clamp
   at desktop bounds. Relative pointing only pans enough to keep the cursor inside a 32 dp margin.
 - Two-finger remote scrolling uses stable-pointer centroid deltas in dp, existing sensitivity
-  and inversion. Optional inertia defaults on: system fling threshold, exponential 180 ms decay,
-  maximum 700 ms. One wheel tick per 8 dp (previously 20 dp), preserving the saved sensitivity
-  multiplier. Hardware wheels share resolved gains/directions, without touch inertia/axis lock. Emit at most 120 wheel ticks/s and four per frame, discard whole-tick backlog.
+  and inversion. Optional inertia defaults on: system fling threshold and platform-specific decay.
+  One wheel tick per 2dp, preserving the saved sensitivity multiplier. Hardware wheels share
+  resolved gains/directions, without the touch baseline, inertia or axis lock. Emit at most
+  480 wheel ticks/s and 16 per frame; retain at most 48 queued ticks with a 100ms release tail.
   Pinches, canceled gestures and the side scroll strip never start inertia. Stop inertia on any
   new input or layout/lifecycle change. Freeze the remote scroll anchor for the entire session.
 - Floating surface supports relative move, tap/double tap, long-press/double-tap-hold drag and
@@ -41,7 +42,7 @@
   retains the system IME option. Hide the legacy auxiliary keys while this dock is open.
 - Common page: staggered QWERTY, punctuation, wide space/Enter, Backspace and Shift.
   Ctrl/Alt/Win/Tab/Escape are grouped above it; 123 contains digits and two symbol sets.
-  Function page: symbols, F1–F12, arrows, Home/End, Page Up/Down, Insert/Delete.
+  F1–F12 are always available above modifiers. Navigation page: arrows, Home/End, Page Up/Down, Insert/Delete.
 - Tap Shift/Ctrl/Alt/Win for a one-shot modifier; long press locks it; tap again releases it.
   Clearly label locked state. Caps Lock is independent. Backspace/arrows repeat while held.
 - Input uses existing virtual key mapping. Chinese composition belongs to the remote IME.
@@ -63,8 +64,8 @@
 ## Visual and accessibility contract
 - Use viewer-local light/dark glass colors, blue accents, rounded surfaces and native buttons.
   Match dark/light themes, use readable legends, pressed/selected/locked states and descriptions.
-- Compact keyboard rows adapt to screen width/height; function keys are paged rather than
-  shrinking the entire computer keyboard. Floating mouse controls have 48 dp touch targets.
+- Compact keyboard rows adapt to screen width/height; function keys scroll horizontally on narrow layouts rather than
+  shrinking their touch targets. Floating mouse controls have 48 dp touch targets.
 - English and simplified Chinese strings accompany new controls and preferences.
 
 ## Acceptance
@@ -86,7 +87,7 @@
   explicitly saved auxiliary/touchpad/gesture preferences.
   Collapsed pad uses the capsule entry. Avoid overlapping capsule and floating panel.
 - Staggered mobile QWERTY: no permanent number row, large space/return, Shift/backspace on third
-  row. Separate Ctrl/Alt/Win/Tab/Esc shortcuts. Numeric/symbol and Fn pages preserve computer keys.
+  row. Separate Ctrl/Alt/Win/Tab/Esc shortcuts. Numeric/symbol and Navigation pages preserve computer keys.
   One-shot modifiers have blue selection; locked modifiers add a lock mark. Caps is independent.
 - Keyboard reserves space. In landscape at >=800dp available width, an enabled expanded touchpad
   docks to its right at 220dp; reuse the same view and restore normalized floating position afterward.
@@ -104,10 +105,10 @@
   per-field/per-shortcut overrides; unsaved connections keep changes for the session only.
   Null overrides inherit; horizontal speed follows vertical unless explicitly customized.
   Preserve explicitly saved legacy sensitivity/inversion/inertia/three-finger mappings once.
-- Relative pointing starts at 3 framebuffer pixels/dp; scrolling uses one wheel tick per 8dp.
-  Independent pointer/vertical/horizontal speed ranges are 0.25–3×. Apply gains once.
-  Acceleration defaults off and is always disabled while a mouse button is held.
-- Mac defaults use standard inertia (180ms decay, 700ms maximum); Windows short inertia
+- Relative pointing starts at 3 framebuffer pixels/dp; touch scrolling uses one wheel tick per 2dp.
+  Pointer speed spans 0.25–3× and vertical/horizontal scroll speeds span 0.25–6×. Apply gains once.
+  Acceleration defaults on for Mac and off elsewhere, and is disabled while a mouse button is held.
+- Mac defaults use standard inertia (240ms decay, 1000ms maximum); Windows short inertia
   (100ms decay, 400ms maximum). Direction calibration remains per computer because VNC
   servers may reverse the wheel. Axis lock commits after system slop: 2:1 dominance locks
   an axis, otherwise diagonal scrolling; keep that decision until the gesture ends.
@@ -140,3 +141,12 @@
 - New profiles default to Smooth (Tight JPEG quality 3, compression 1, with lossless fallbacks). HD prefers lossless ZRLE with quality-9 Tight fallback. Existing profiles migrate to Legacy and keep their original encoding behavior until explicitly switched. Pixel format and framebuffer resolution remain unchanged.
 - Encoding changes are applied by the receiver at complete protocol message boundaries and acknowledged in the UI. Selected-region requests avoid CopyRect sources outside the region and fully refresh after switching. Pure pending buttonless pointer movements and duplicate refresh requests may be merged, but key/button/wheel ordering is preserved. Preset acknowledgement describes negotiation, not guaranteed server encoding or latency.
 - Verification must cover nonzero display origins, invalid metadata/manual resize invalidation, migration, region requests, encoding negotiation, pointer masks, read-only behavior and lifecycle release. Real Mac shortcuts, multi-display servers and weak-network effects remain separate acceptance checks.
+
+## Function keys and responsive touchpad revision (2026-10-30)
+
+- F1–F12 stay in a visible row on every keyboard page, above modifiers. Targets remain at least 48dp; wide layouts show the full row, narrow layouts scroll it with an affordance. The former Fn page becomes Navigation. Plain F keys send their own keysyms, including on Mac; system actions still require explicit shortcuts.
+- Touch scrolling uses 2dp per wheel tick at 1× (four times the former baseline), shared by the desktop, floating pad and scroll strip. Physical mouse wheels retain their existing scale. Pointer sensitivity remains 0.25–3×; vertical/horizontal touch scroll gain expands to 0.25–6× without rewriting saved values.
+- Pace wheel events at display frames with a 480 tick/s ceiling and at most 16 per frame. Subtract only sent motion; retain a bounded 48-tick backlog and drain it within 100ms after touch-up, rather than dropping normal fast motion. Reverse direction clears stale movement on that axis; new touches, keys, buttons, cancellation and lifecycle changes stop queued motion and inertia immediately.
+- Mac defaults enable the existing velocity-sensitive pointer acceleration, applying one vector gain to both axes to preserve direction. Explicit acceleration choices remain respected; held-button drags remain unaccelerated. Standard Mac scroll inertia uses 240ms exponential decay with a 1s maximum, while Windows keeps its short profile.
+- A dedicated 1dp pointer onset enables fine positioning on the app touchpad without waiting for the system's larger touch slop. Tap/double-tap/long-press and held-button ownership remain explicit; gestures cannot click through the panel. Validate small movements, drag masks, scroll displacement across event batching and frames, direction reversal, bounded backlog, inertia interruption, and portrait/landscape function-row visibility.
+- Standard RFB wheel events are discrete. This improves response and consistency but does not provide macOS pixel-scroll phases, pressure clicks or hardware haptics; native feel still needs acceptance against a real Mac.

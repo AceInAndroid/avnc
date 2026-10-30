@@ -214,6 +214,8 @@ class PlatformInputTest {
         }
     }
 
+    private fun wheelMasks(ticks: List<Int>) = ticks.flatMap { listOf(it, 0) }
+
     private fun mouseWheel(horizontal: Float, vertical: Float) = session.onActivity {
         val point = it.viewModel.frameState.toVP(PointF(800f, 600f))
         val properties = arrayOf(MotionEvent.PointerProperties().apply {
@@ -267,12 +269,14 @@ class PlatformInputTest {
                     axisLock = false, inertia = "off")
             configure("mac", settings)
             scroll(8f, 16f)
-            assertMasks(listOf(32, 0, 8, 0, 32, 0))
+            val forward = List(4) { listOf(32, 8) }.flatten() + List(4) { 32 }
+            assertMasks(wheelMasks(forward))
             configure("mac", settings.copy(invertVertical = true, invertHorizontal = true))
             scroll(8f, 16f)
-            assertMasks(listOf(32, 0, 8, 0, 32, 0, 64, 0, 16, 0, 64, 0))
+            val reverse = List(4) { listOf(64, 16) }.flatten() + List(4) { 64 }
+            assertMasks(wheelMasks(forward + reverse))
         }
-        assertEquals(12, session.server.receivedPointerEvents.size)
+        assertEquals(48, session.server.receivedPointerEvents.size)
     }
 
     @Test fun scrollAxisLockSuppressesMinorAxisAndStaysLockedForTheWholeGesture() {
@@ -282,7 +286,8 @@ class PlatformInputTest {
                 it.sessionInput.onVirtualPointerStart()
                 it.sessionInput.onVirtualPointerScroll(8f, 24f)
             }
-            assertMasks(listOf(8, 0, 8, 0, 8, 0))
+            val locked = List(12) { 8 }
+            assertMasks(wheelMasks(locked))
             val frame = CountDownLatch(1)
             session.onActivity {
                 it.sessionInput.onVirtualPointerScroll(24f, 0f)
@@ -293,12 +298,13 @@ class PlatformInputTest {
             // A subsequent key chord is a protocol barrier for the preceding scroll frame.
             session.onActivity { assertTrue(it.sessionInput.onRemoteAction(RemoteAction.COPY)) }
             assertKeys(chord('c'.code, XKeySym.XK_Control_L))
-            assertMasks(listOf(8, 0, 8, 0, 8, 0))
+            assertMasks(wheelMasks(locked))
             // Reloading cancels the preceding stream; a new unlocked stream keeps both axes.
             configure("windows", RemoteInputOverrides(axisLock = false, inertia = "off"))
             scroll(8f, 24f)
-            assertMasks(listOf(8, 0, 8, 0, 8, 0, 8, 0, 32, 0, 8, 0, 8, 0))
+            val unlocked = List(4) { listOf(8, 32) }.flatten() + List(8) { 8 }
+            assertMasks(wheelMasks(locked + unlocked))
         }
-        assertEquals(14, session.server.receivedPointerEvents.size)
+        assertEquals(56, session.server.receivedPointerEvents.size)
     }
 }
