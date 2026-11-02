@@ -7,25 +7,28 @@
   -->
 
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
-    app:title="@string/pref_tools">
+    app:title="@string/settings_advanced">
 
-    <Preference
-        app:fragment="com.gaurav.avnc.ui.prefs.ImportExportFragment"
-        app:title="@string/pref_import_export" />
+    <Preference app:key="settings_about" app:title="@string/title_about" />
+    <Preference app:key="settings_bug_report" app:title="@string/settings_bug_report"
+        app:summary="@string/settings_bug_report_summary" />
 
     <PreferenceCategory
         app:icon="@drawable/ic_bug"
         app:title="@string/pref_debugging">
 
         <Preference
+            app:key="settings_logs"
             app:fragment="com.gaurav.avnc.ui.prefs.LogsFragment"
             app:title="@string/pref_logs" />
 
         <Preference
+            app:key="settings_touch_test"
             app:fragment="com.gaurav.avnc.ui.prefs.TouchTestFragment"
             app:title="@string/pref_touch_test" />
 
         <Preference
+            app:key="settings_key_test"
             app:fragment="com.gaurav.avnc.ui.prefs.KeyTestFragment"
             app:title="@string/pref_key_test" />
     </PreferenceCategory>

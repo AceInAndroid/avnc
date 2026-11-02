@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_transfer_title">发送文件</string>
+    <string name="file_transfer_hint">文件通过独立 SSH/SFTP 连接发送。请在 Mac 的“系统设置 → 通用 → 共享”中开启“远程登录”，并允许此账户登录，无需安装辅助程序。输入的密码仅用于本次传输。</string>
+    <string name="file_transfer_destination">保存到 SSH 账户的 Downloads 文件夹。同名文件自动编号，保留已有文件。</string>
+    <string name="file_transfer_host">SSH 主机</string>
+    <string name="file_transfer_port">SSH 端口</string>
+    <string name="file_transfer_user">Mac 账户名</string>
+    <string name="file_transfer_password">SSH 密码</string>
+    <string name="file_transfer_key_password">私钥口令（加密时填写）</string>
+    <string name="file_transfer_use_key">使用此连接已保存的 SSH 私钥</string>
+    <string name="file_transfer_choose">选择文件</string>
+    <string name="file_transfer_required">请填写此项</string>
+    <string name="file_transfer_invalid_port">请输入 1 至 65535 的端口</string>
+    <string name="file_transfer_unavailable">连接远端并开启远端输入后可发送文件。</string>
+    <string name="file_transfer_no_picker">没有可用的文件选择器。</string>
+    <string name="file_transfer_preparing">正在准备文件…</string>
+    <string name="file_transfer_connecting">正在建立安全连接…</string>
+    <string name="file_transfer_progress">已发送 %1$s / %2$s</string>
+    <string name="file_transfer_cannot_read">无法打开所选文件。</string>
+    <string name="file_transfer_complete">文件已发送</string>
+    <string name="file_transfer_saved">已保存到 %1$s</string>
+    <string name="file_transfer_failed">文件发送失败</string>
+    <string name="file_transfer_retry">重试</string>
+    <string name="file_transfer_finishing">正在结束上一次传输…</string>
+    <string name="file_transfer_timeout">传输超时，请重试。</string>
+</resources>

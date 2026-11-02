@@ -1,0 +1,8 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto" app:title="@string/settings_platform">
+    <Preference app:key="remote_template_mac" app:title="@string/remote_input_mac"
+        app:summary="@string/settings_template_summary" />
+    <Preference app:key="remote_template_windows" app:title="@string/remote_input_windows"
+        app:summary="@string/settings_template_summary" />
+    <Preference app:key="remote_template_generic" app:title="@string/remote_input_generic"
+        app:summary="@string/settings_template_summary" />
+</PreferenceScreen>

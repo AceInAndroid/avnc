@@ -67,7 +67,7 @@
     <string name="hint_ssh_port">Port SSH</string>
     <string name="hint_key_password">Kata sandi kunci</string>
     <string name="hint_send_text_to_server">Kirim teks ke server</string>
-    <string name="msg_about_app">Klien VNC yang cepat dan aman. Lihat dan kendalikan perangkat apa pun yang menjalankan server VNC dari jarak jauh.  \n\nAVNC adalah perangkat lunak sumber terbuka dan copyleft — dibuat dengan bantuan banyak kontributor.</string>
+    <string name="msg_about_app">Klien VNC yang cepat dan aman. Lihat dan kendalikan perangkat apa pun yang menjalankan server VNC dari jarak jauh.  \n\nFastVNC adalah perangkat lunak sumber terbuka dan copyleft — dibuat dengan bantuan banyak kontributor.</string>
     <string name="msg_server_profile_added">Server ditambahkan</string>
     <string name="msg_server_profile_deleted">Server dihapus</string>
     <string name="msg_normal_view_mode">Mode normal diaktifkan</string>
@@ -94,7 +94,7 @@
     <string name="msg_copied_to_clipboard">Disalin</string>
     <string name="msg_tap_to_select_a_key">Ketuk untuk memilih kunci:</string>
     <string name="msg_button_up_delay_help">Menunda peristiwa klik dapat membantu dalam beberapa kasus langka jika sebuah aplikasi tidak merespons klik.</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN dapat digunakan untuk menyalakan komputer dari jarak jauh. \n\nPertama, konfigurasikan WoL di komputer jarak jauh, lalu aktifkan di AVNC.  \nSetelah diaktifkan, paket ajaib WoL akan otomatis dikirim sebelum menyambung ke server ini.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN dapat digunakan untuk menyalakan komputer dari jarak jauh. \n\nPertama, konfigurasikan WoL di komputer jarak jauh, lalu aktifkan di FastVNC.  \nSetelah diaktifkan, paket ajaib WoL akan otomatis dikirim sebelum menyambung ke server ini.</string>
     <string name="msg_gesture_style_help"><b>Layar sentuh</b>  \nLakukan tindakan di titik sentuh  \n\n<b>Touchpad</b>  \nLakukan tindakan di penunjuk</string>
     <string name="msg_drag_gesture_help">Menetapkan sebuah tindakan pada gerakan ini akan mengubah deteksi tekan lama:  \n\n<b>Tekan-tahan-lepas</b> → Tekan lama  \n<b>Tekan-tahan-geser</b> → Tekan lama dan geser</string>
     <string name="msg_shortcut_server_deleted">Server ini telah dihapus</string>

@@ -41,6 +41,7 @@ class LicenseFragment : Fragment() {
             "license/GPL-3.0.txt",
             "license/Apache-2.0.txt",
             "license/BSD-libjpeg-turbo.txt",
+            "license/LibreSSL.txt",
             "license/sshlib.txt",
             "license/X11.txt",
     )

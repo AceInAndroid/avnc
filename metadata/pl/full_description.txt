@@ -1,4 +1,4 @@
-AVNC to otwartoźródłowy klient VNC dla systemu Android. Umożliwia on zdalne sterowanie dowolnym urządzeniem wyposażonym w serwer VNC.
+FastVNC to otwartoźródłowy klient VNC dla systemu Android. Umożliwia on zdalne sterowanie dowolnym urządzeniem wyposażonym w serwer VNC.
 
 Cechy:
 

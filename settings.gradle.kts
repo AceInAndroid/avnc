@@ -12,4 +12,4 @@ dependencyResolutionManagement {
 }
 
 include(":app")
-rootProject.name = "AVNC"
+rootProject.name = "FastVNC"

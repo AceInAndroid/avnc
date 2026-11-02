@@ -68,14 +68,14 @@ class LibrariesFragment : Fragment() {
             Library("Libjpeg-turbo",
                     "https://github.com/libjpeg-turbo/libjpeg-turbo"),
 
-            Library("wolfSSL",
-                    "https://github.com/wolfSSL/wolfssl"),
+            Library("LibreSSL",
+                    "https://www.libressl.org/"),
 
             Library("ConnectBot's SSH library",
                     "https://github.com/connectbot/sshlib/"),
 
             Library("Android Jetpack (Androidx)",
-                    "https://github.com/libjpeg-turbo/libjpeg-turbo"),
+                    "https://developer.android.com/jetpack/androidx"),
 
             Library("Material Components for Android",
                     "https://github.com/material-components/material-components-android"),

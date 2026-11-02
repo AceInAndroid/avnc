@@ -9,21 +9,27 @@
 package com.gaurav.avnc.session
 
 import android.graphics.PointF
+import android.os.SystemClock
 import android.util.Log
 import com.gaurav.avnc.vnc.PointerButton
 import com.gaurav.avnc.vnc.VncClient
-import java.util.concurrent.Executors
+import java.io.IOException
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Allows sending different types of messages to remote server.
  */
-class Messenger(private val client: VncClient) {
+class Messenger(private val client: VncClient, private val onError: (Throwable) -> Unit = {}) {
 
     /**************************************************************************
      * Sender thread
      **************************************************************************/
-    private val sender = Executors.newSingleThreadExecutor()
+    private val sender = ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+            ArrayBlockingQueue(512))
+    private val failed = AtomicBoolean(false)
 
     private val queueLock = Any()
     private data class PointerMove(var x: Int, var y: Int)
@@ -39,19 +45,37 @@ class Messenger(private val client: VncClient) {
     private fun enqueue(action: Runnable): Boolean {
         try {
             if (client.connected && !sender.isShutdown) {
-                sender.execute(action)
+                val queuedAt = SystemClock.elapsedRealtime()
+                sender.execute send@{
+                    if (!client.connected || failed.get()) return@send
+                    try {
+                        // Disconnect rather than replay stale key/button transitions or drop an up.
+                        if (SystemClock.elapsedRealtime() - queuedAt > 2000)
+                            throw IOException("Remote input queue stalled")
+                        action.run()
+                    } catch (error: Exception) {
+                        fail(error)
+                    }
+                }
                 return true
             }
         } catch (e: Exception) {
-            Log.w("Messenger", "Failed to enqueue action [isShutdown: ${sender.isShutdown}]: ${e.message}")
+            if (!sender.isShutdown) fail(IOException("Remote input queue is full", e))
         }
         return false
     }
 
+    private fun fail(error: Throwable) {
+        if (!failed.compareAndSet(false, true)) return
+        sender.shutdownNow()
+        runCatching { onError(error) }.onFailure { Log.e("Messenger", "Error reporting send failure", it) }
+        client.cancel()
+    }
+
     fun shutdown() {
         runCatching {
-            sender.shutdown()
-            sender.awaitTermination(60, TimeUnit.SECONDS)
+            sender.shutdownNow()
+            sender.awaitTermination(2, TimeUnit.SECONDS)
         }
         if (!sender.isTerminated)
             Log.w("Messenger", "Unable to shutdown messenger thread")

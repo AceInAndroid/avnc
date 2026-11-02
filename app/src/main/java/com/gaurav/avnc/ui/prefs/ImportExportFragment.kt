@@ -16,6 +16,8 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ScrollView
+import androidx.core.view.isVisible
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.Keep
@@ -27,11 +29,9 @@ import com.gaurav.avnc.R
 import com.gaurav.avnc.databinding.FragmentImportExportBinding
 import com.gaurav.avnc.util.ConfirmDialog
 import com.gaurav.avnc.util.DeviceAuthPrompt
-import com.gaurav.avnc.util.MsgDialog
 import com.gaurav.avnc.util.OpenableDocument
 import com.gaurav.avnc.util.QrCode
 import com.gaurav.avnc.viewmodel.PrefsViewModel
-import com.google.android.material.snackbar.Snackbar
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.text.DateFormat
@@ -50,11 +50,14 @@ class ImportExportFragment : Fragment() {
     private val importFilePicker = registerForActivityResult(OpenableDocument()) { import(it) }
     private val exportFilePicker = registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { export(it) }
     private val scanCode = registerForActivityResult(ScanContract()) { scanResult ->
-        val content = scanResult?.contents ?: return@registerForActivityResult
+        val content = scanResult?.contents ?: run {
+            viewModel.cancelBackupSelection()
+            return@registerForActivityResult
+        }
         val decoded = try {
             QrCode.decode(content)
         } catch (_: QrCode.InvalidQrCodeException) {
-            showMsg(getString(R.string.err_invalid_qr_code))
+            viewModel.failBackupSelection(getString(R.string.err_invalid_qr_code))
             return@registerForActivityResult
         }
 
@@ -66,9 +69,11 @@ class ImportExportFragment : Fragment() {
 
     private lateinit var binding: FragmentImportExportBinding
     private val viewModel by activityViewModels<PrefsViewModel>()
+    private var lastTag: Tag? = null
     private val authPrompt by lazy { DeviceAuthPrompt(requireActivity()) }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        lastTag = savedInstanceState?.getString("last_tag")?.let { runCatching { Tag.valueOf(it) }.getOrNull() }
         binding = FragmentImportExportBinding.inflate(inflater, container, false)
         binding.lifecycleOwner = viewLifecycleOwner
         binding.viewModel = viewModel
@@ -79,6 +84,10 @@ class ImportExportFragment : Fragment() {
         binding.exportQrBtn.setOnClickListener { checkAuthAndStart(Tag.ExportQr) }
 
         viewModel.importExportFinishedEvent.observe(viewLifecycleOwner) { handleImportExportResult(it) }
+        viewModel.backupState.observe(viewLifecycleOwner, ::renderBackupState)
+        binding.backupRetry.setOnClickListener {
+            if (!viewModel.retryLastBackup()) lastTag?.let(::checkAuthAndStart)
+        }
 
         childFragmentManager.setFragmentResultListener(REQUEST_IMPORT_URI, viewLifecycleOwner) { _, bundle ->
             val uri = BundleCompat.getParcelable(bundle, KEY_IMPORT_URI, Uri::class.java)
@@ -88,19 +97,21 @@ class ImportExportFragment : Fragment() {
 
         authPrompt.init(
                 onSuccess = { checkNotNull(it as? Tag); start(it) },
-                onFail = { showMsg("Authentication error: $it") }
+                onFail = { viewModel.failBackupSelection(it) },
+                onCancel = { viewModel.cancelBackupSelection() }
         )
 
         return binding.root
     }
 
-    override fun onResume() {
-        super.onResume()
-        activity?.title = getString(R.string.pref_import_export)
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("last_tag", lastTag?.name)
     }
 
-    private fun showMsg(msg: CharSequence) {
-        Snackbar.make(requireView(), msg, Snackbar.LENGTH_LONG).show()
+    override fun onResume() {
+        super.onResume()
+        updateSettingsTitle(getString(R.string.settings_backup))
     }
 
     /**
@@ -117,6 +128,9 @@ class ImportExportFragment : Fragment() {
      * This is to protect sensitive info that might be present in exported data.
      */
     private fun checkAuthAndStart(tag: Tag) {
+        val action = if (tag == Tag.Import || tag == Tag.ImportQr) PrefsViewModel.BackupAction.IMPORT else PrefsViewModel.BackupAction.EXPORT
+        if (!viewModel.beginBackupSelection(action)) return
+        lastTag = tag
         if (authPrompt.canLaunch())
             authPrompt.launch(getString(R.string.msg_export_auth_required), tag)
         else
@@ -140,7 +154,7 @@ class ImportExportFragment : Fragment() {
         try {
             picker.launch(args)
         } catch (e: ActivityNotFoundException) {
-            showMsg("Error: No app found to choose backup file.")
+            viewModel.failBackupSelection(getString(R.string.settings_backup_file_missing))
             Log.e("ImportExport", "Error: No app found to choose backup file.", e)
         }
     }
@@ -149,7 +163,10 @@ class ImportExportFragment : Fragment() {
         val options = ScanOptions()
                 .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                 .setPrompt(getString(R.string.title_import_qr))
-        scanCode.launch(options)
+        try { scanCode.launch(options) }
+        catch (error: ActivityNotFoundException) {
+            viewModel.failBackupSelection(getString(R.string.settings_backup_file_missing))
+        }
     }
 
     /**
@@ -162,30 +179,46 @@ class ImportExportFragment : Fragment() {
                 val title = getString(R.string.title_import)
                 val msg = "${getString(R.string.msg_confirm_import_uri)}\n\n$uri"
                 val result = Bundle().apply { putParcelable(KEY_IMPORT_URI, uri) }
+                viewModel.cancelBackupSelection()
                 ConfirmDialog.show(childFragmentManager, REQUEST_IMPORT_URI, title, msg, result)
             }
-            else -> showMsg(getString(R.string.err_unsupported_qr_uri))
+            else -> viewModel.failBackupSelection(getString(R.string.err_unsupported_qr_uri))
         }
     }
 
     private fun import(uri: Uri?) {
-        if (uri != null)
-            viewModel.import(uri)
+        if (uri != null) viewModel.import(uri)
+        else viewModel.cancelBackupSelection()
     }
 
     private fun export(uri: Uri?) {
-        if (uri != null)
-            viewModel.export(uri)
+        if (uri != null) viewModel.export(uri)
+        else viewModel.cancelBackupSelection()
     }
 
     private fun handleImportExportResult(result: Result<String>) {
-        result.onSuccess {
-            if (it.isNotEmpty())
-                showMsg(it)
-        }.onFailure {
-            MsgDialog.show(childFragmentManager, "Error", it.message ?: "An error occurred")
+        result.onFailure {
+            // The persistent inline error and retry button survive rotation.
             Log.e(javaClass.simpleName, "Import/Export error", it)
         }
+    }
+
+    private fun renderBackupState(state: PrefsViewModel.BackupState) {
+        val running = state is PrefsViewModel.BackupState.Running
+        binding.backupProgress.isVisible = running
+        binding.backupRetry.isVisible = state is PrefsViewModel.BackupState.Error
+        binding.backupStatus.isVisible = state !is PrefsViewModel.BackupState.Idle
+        binding.backupStatus.text = when (state) {
+            PrefsViewModel.BackupState.Idle -> ""
+            is PrefsViewModel.BackupState.Waiting -> getString(R.string.settings_backup_waiting)
+            is PrefsViewModel.BackupState.Running -> getString(if (state.action == PrefsViewModel.BackupAction.IMPORT)
+                R.string.settings_backup_importing else R.string.settings_backup_exporting)
+            is PrefsViewModel.BackupState.Success -> state.message
+            is PrefsViewModel.BackupState.Error -> state.message
+            PrefsViewModel.BackupState.Cancelled -> getString(R.string.settings_backup_cancelled)
+        }
+        if (state is PrefsViewModel.BackupState.Running || state is PrefsViewModel.BackupState.Error || state is PrefsViewModel.BackupState.Success)
+            binding.root.post { (binding.root as ScrollView).scrollTo(0, 0) }
     }
 
     /**

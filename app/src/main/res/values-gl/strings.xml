@@ -67,7 +67,7 @@
     <string name="hint_ssh_port">Porto SSH</string>
     <string name="hint_key_password">Contraseña principal</string>
     <string name="hint_send_text_to_server">Enviar texto ao servidor</string>
-    <string name="msg_about_app">Un cliente de VNC rápido e seguro. Mira e controla remotamente calqueira dispositivo cun servidor VNC.\n\n\nAVNC é un software de código aberto e copyleft — feito coa axuda de moitos contribuíntes.</string>
+    <string name="msg_about_app">Un cliente de VNC rápido e seguro. Mira e controla remotamente calqueira dispositivo cun servidor VNC.\n\n\nFastVNC é un software de código aberto e copyleft — feito coa axuda de moitos contribuíntes.</string>
     <string name="msg_server_profile_added">Servidor engadido</string>
     <string name="msg_server_profile_deleted">Servidor eliminado</string>
     <string name="msg_normal_view_mode">Modo normal activado</string>
@@ -94,7 +94,7 @@
     <string name="msg_copied_to_clipboard">Copiado</string>
     <string name="msg_tap_to_select_a_key">Preme para seleccionar unha tecla:</string>
     <string name="msg_button_up_delay_help">Atrasar os eventos de clic pode axudar en casos raros se unha aplicación non responde aos clics.</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN pódese usar para poñer en marcha un ordenador de xeito remoto.\n\nPrimeiro, configure WoL no ordenador remoto e logo activeo en AVNC.\nUnha vez activado, o paquete máxico de WoL enviarase automaticamente antes de conectarse a este servidor.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN pódese usar para poñer en marcha un ordenador de xeito remoto.\n\nPrimeiro, configure WoL no ordenador remoto e logo activeo en FastVNC.\nUnha vez activado, o paquete máxico de WoL enviarase automaticamente antes de conectarse a este servidor.</string>
     <string name="msg_gesture_style_help"><b>Pantalla táctil</b>\nRealiza accións no punto de toque\n\n<b>Touchpad</b>\nRealiza accións no punteiro</string>
     <string name="msg_drag_gesture_help">Asignando unha acción a este xesto cambiará a detección da pulsación longa:\n\n<b>Preme-mantén-solta</b> → Xesto longo\n<b>Preme-mantén-desliza</b> → Preme e desliza</string>
     <string name="msg_shortcut_server_deleted">Este servidor foi eliminado</string>

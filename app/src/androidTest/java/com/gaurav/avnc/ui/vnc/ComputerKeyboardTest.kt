@@ -153,9 +153,10 @@ class ComputerKeyboardTest : VncSessionTest() {
                     val scroll = checkNotNull(keyboard.findViewWithTag<HorizontalScrollView>("keyboard_function_row"))
                     assertTrue(scroll.isShown)
                     val row = scroll.getChildAt(0) as ViewGroup
-                    assertEquals(12, row.childCount)
+                    assertEquals(13, row.childCount)
+                    assertEquals(key(KeyEvent.KEYCODE_ESCAPE), row.getChildAt(0).tag)
                     for (index in 0..11) {
-                        assertEquals(key(KeyEvent.KEYCODE_F1 + index), row.getChildAt(index).tag)
+                        assertEquals(key(KeyEvent.KEYCODE_F1 + index), row.getChildAt(index + 1).tag)
                         assertEquals(1, descendants(keyboard).count { it.tag == key(KeyEvent.KEYCODE_F1 + index) })
                     }
                 }
@@ -203,6 +204,84 @@ class ComputerKeyboardTest : VncSessionTest() {
                 assertTrue(vncSession.server.receivedKeySyms.isEmpty())
             }
         }
+    }
+
+    @Test fun commonPagePlacesDesktopKeysInPhysicalRows() {
+        vncSession.run {
+            show()
+            vncSession.onActivity { activity ->
+                val keyboard = activity.computerKeyboard.container
+                fun row(tag: String) = checkNotNull(keyboard.findViewWithTag<ViewGroup>(tag))
+                fun tags(row: ViewGroup) = (0 until row.childCount).map { row.getChildAt(it).tag }
+                val numberTags = tags(row("keyboard_number_row"))
+                assertEquals(listOf(KeyEvent.KEYCODE_GRAVE) + (KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9) +
+                        listOf(KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_DEL),
+                        numberTags.map { it.toString().removePrefix("keyboard_key_").toInt() })
+                val upper = tags(row("keyboard_qwerty_row"))
+                assertEquals(key(KeyEvent.KEYCODE_TAB), upper.first())
+                assertEquals(key(KeyEvent.KEYCODE_Q), upper[1])
+                assertEquals(key(KeyEvent.KEYCODE_BACKSLASH), upper.last())
+                val home = tags(row("keyboard_home_row"))
+                assertEquals(key(KeyEvent.KEYCODE_CAPS_LOCK), home.first())
+                assertEquals(key(KeyEvent.KEYCODE_A), home[1])
+                assertEquals(key(KeyEvent.KEYCODE_ENTER), home.last())
+                val lower = tags(row("keyboard_shift_row"))
+                assertEquals(key(KeyEvent.KEYCODE_SHIFT_LEFT), lower.first())
+                assertEquals(key(KeyEvent.KEYCODE_Z), lower[1])
+                assertEquals(key(KeyEvent.KEYCODE_SHIFT_RIGHT), lower[lower.lastIndex - 1])
+                assertEquals(key(KeyEvent.KEYCODE_DPAD_UP), lower.last())
+                val bottom = tags(row("keyboard_modifier_row"))
+                assertEquals(listOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_DPAD_RIGHT).map { key(it) }, bottom.takeLast(3))
+            }
+        }
+    }
+
+    @Test fun desktopDeckKeepsTouchTargetsAndOnlyScrollsWhenNeeded() {
+        vncSession.run {
+            show()
+            vncSession.onActivity { activity ->
+                val scroll = activity.computerKeyboard.container.findViewWithTag<HorizontalScrollView>("keyboard_key_deck")
+                val density = activity.resources.displayMetrics.density
+                fun layout(widthDp: Int) {
+                    val width = (widthDp * density + .5f).toInt()
+                    val height = (250 * density + .5f).toInt()
+                    repeat(2) {
+                        scroll.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+                        scroll.layout(0, 0, width, height)
+                    }
+                }
+                layout(320)
+                assertTrue(scroll.canScrollHorizontally(1))
+                val minimum = (48 * density + .5f).toInt()
+                descendants(scroll).filter { it.tag?.toString()?.startsWith("keyboard_key_") == true && it is com.google.android.material.button.MaterialButton }
+                        .forEach {
+                            assertTrue("Narrow desktop key: ${it.tag}", it.width >= minimum)
+                            assertTrue("Short desktop key: ${it.tag}", it.height >= minimum)
+                        }
+                layout(1000)
+                scroll.scrollTo(0, 0)
+                assertFalse(scroll.canScrollHorizontally(1))
+                assertTrue(vncSession.server.receivedKeySyms.isEmpty())
+            }
+        }
+    }
+
+    @Test fun commonPunctuationAndRightShiftUseExistingMapping() {
+        vncSession.run {
+            show()
+            click(key(KeyEvent.KEYCODE_1))
+            click(key(KeyEvent.KEYCODE_SHIFT_RIGHT))
+            click(key(KeyEvent.KEYCODE_LEFT_BRACKET))
+            click(key(KeyEvent.KEYCODE_APOSTROPHE))
+            click(key(KeyEvent.KEYCODE_SHIFT_LEFT))
+            click(key(KeyEvent.KEYCODE_SLASH))
+        }
+        assertEquals(listOf('1'.code, XKeySym.XK_Shift_R, '{'.code, '\''.code,
+                XKeySym.XK_Shift_L, '?'.code), vncSession.server.receivedKeyDowns)
+        assertEquals(vncSession.server.receivedKeyDowns.sorted(),
+                vncSession.server.receivedKeySyms.filter { !it.second }.map { it.first }.sorted())
     }
 
     private fun descendants(view: View): List<View> = listOf(view) +

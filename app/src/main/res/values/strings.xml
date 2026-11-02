@@ -7,7 +7,7 @@
   -->
 
 <resources>
-    <string name="app_name" translatable="false">AVNC</string>
+    <string name="app_name" translatable="false">FastVNC</string>
 
     <string name="title_add_server_profile">Add server</string>
     <string name="title_edit_server_profile">Edit server</string>
@@ -86,7 +86,7 @@
     <string name="hint_send_text_to_server">Send text to server</string>
 
 
-    <string name="msg_about_app">A fast and secure VNC client. Remotely view and control any device running a VNC server.\n\n\nAVNC is an open source and copyleft software — made with help from many contributors.</string>
+    <string name="msg_about_app">A fast and secure VNC client. Remotely view and control any device running a VNC server.\n\n\nFastVNC is an open source and copyleft software — made with help from many contributors.</string>
     <string name="msg_server_profile_added">Server added</string>
     <string name="msg_server_profile_deleted">Server deleted</string>
     <string name="msg_normal_view_mode">Normal mode enabled</string>
@@ -108,7 +108,7 @@
     <string name="msg_done">Done</string>
     <string name="msg_export_auth_required">Authenticate to export servers</string>
     <string name="err_import_too_large">Import file is too large (limit: 1 MiB).</string>
-    <string name="err_invalid_qr_code">Invalid AVNC QR code.</string>
+    <string name="err_invalid_qr_code">Invalid FastVNC QR code.</string>
     <string name="err_qr_export_failed">Failed to generate QR code:</string>
     <string name="err_unsupported_qr_uri">Unsupported or invalid URI.</string>
     <string name="msg_confirm_import_uri">Import from the following URI?</string>
@@ -119,7 +119,7 @@
     <string name="msg_copied_to_clipboard">Copied</string>
     <string name="msg_tap_to_select_a_key">Tap to select a key:</string>
     <string name="msg_button_up_delay_help">Delaying click events can help in some rare cases if an app is not responding to clicks.</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN can be used to remotely power-on a computer.\n\nFirst, configure WoL on remote computer, then enable it in AVNC.\nOnce enabled, WoL magic packet will be automatically sent before connecting to this server.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN can be used to remotely power-on a computer.\n\nFirst, configure WoL on remote computer, then enable it in FastVNC.\nOnce enabled, WoL magic packet will be automatically sent before connecting to this server.</string>
     <string name="msg_gesture_style_help"><b>Touchscreen</b>\nDo actions at touch-point \n\n<b>Touchpad</b>\nDo actions at pointer</string>
     <string name="msg_drag_gesture_help">Assigning an action to this gesture will change Long press detection:\n\n<b>Press-hold-release</b> → Long press\n<b>Press-hold-swipe</b> → Long press and swipe</string>
     <string name="msg_shortcut_server_deleted">This server has been deleted</string>

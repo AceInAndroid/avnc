@@ -9,8 +9,9 @@
 package com.gaurav.avnc.ui.home
 
 import androidx.core.content.edit
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.espresso.Espresso
-import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions
 import androidx.test.espresso.intent.Intents
@@ -23,7 +24,6 @@ import androidx.test.espresso.matcher.ViewMatchers.withParent
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.gaurav.avnc.CleanPrefsRule
 import com.gaurav.avnc.EmptyDatabaseRule
 import com.gaurav.avnc.R
 import com.gaurav.avnc.ScrollToBottom
@@ -39,125 +39,229 @@ import com.gaurav.avnc.performWithTimeout
 import com.gaurav.avnc.setupFileOpenIntent
 import com.gaurav.avnc.targetContext
 import com.gaurav.avnc.targetPrefs
+import com.gaurav.avnc.util.hideKeyboard
 import org.hamcrest.core.AllOf.allOf
 import org.junit.After
 import org.junit.Assert
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class BasicEditorTest {
-
     private val testProfile = ServerProfile(name = "foo", host = "bar")
+    private val activityRule = ActivityScenarioRule(HomeActivity::class.java)
+    private val dbRule = EmptyDatabaseRule()
+    @Rule @JvmField val rules: RuleChain = RuleChain.outerRule(HomeTestPreferencesRule())
+            .around(dbRule).around(activityRule)
 
-    @Rule
-    @JvmField
-    val activityRule = ActivityScenarioRule(HomeActivity::class.java)
+    private fun openEditor() = onView(withId(R.id.home_add)).doClick()
 
-    @Rule
-    @JvmField
-    val dbRule = EmptyDatabaseRule()
-
-    @Rule
-    @JvmField
-    val prefRule = CleanPrefsRule()
-
-    @Test
-    fun createSimpleProfile() {
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        onView(withText(R.string.title_add_server_profile)).inRoot(isDialog()).checkIsDisplayed()
-        onView(withHint(R.string.hint_server_name)).doTypeText(testProfile.name)
-        onView(withHint(R.string.hint_host)).doTypeText(testProfile.host)
-        closeSoftKeyboard()
-        onView(withText(R.string.title_save)).doClick()
-
-        onView(withText(R.string.msg_server_profile_added)).checkWillBeDisplayed()
-        onView(allOf(
-                withParent(withId(R.id.servers)),
-                hasDescendant(withText(testProfile.name)),
-                hasDescendant(withText(testProfile.host)))
-        ).checkWillBeDisplayed()
+    /** MIUI may hide the IME without returning Espresso's close-keyboard result callback. */
+    private fun closeEditorKeyboard() {
+        activityRule.scenario.onActivity { activity ->
+            val editor = activity.supportFragmentManager.findFragmentByTag("profileEditor") as ProfileEditorSheet
+            val dialog = editor.requireDialog()
+            val decor = requireNotNull(dialog.window).decorView
+            hideKeyboard(dialog.currentFocus ?: decor)
+        }
+        com.gaurav.avnc.pollingAssert {
+            activityRule.scenario.onActivity { activity ->
+                val editor = activity.supportFragmentManager.findFragmentByTag("profileEditor") as ProfileEditorSheet
+                val decor = requireNotNull(editor.requireDialog().window).decorView
+                val insets = requireNotNull(ViewCompat.getRootWindowInsets(decor))
+                Assert.assertFalse("Editor IME is still visible", insets.isVisible(WindowInsetsCompat.Type.ime()))
+            }
+        }
     }
 
-    private fun checkAdvancedModeIsOpen() {
-        //This checkbox is only shown in advanced mode
-        onView(withText(R.string.title_use_repeater)).checkWillBeDisplayed()
+    @Test fun createQuickProfileSaveOnlyAssignsAnId() {
+        openEditor()
+        onView(withText(R.string.title_add_server_profile)).checkWillBeDisplayed()
+        onView(withId(R.id.host)).doTypeText(testProfile.host)
+        onView(withId(R.id.name)).doTypeText(testProfile.name)
+        closeEditorKeyboard()
+        onView(withId(R.id.save_btn)).doClick()
+        com.gaurav.avnc.pollingAssert {
+            val profile = kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList().single() }
+            Assert.assertTrue(profile.ID > 0)
+            Assert.assertEquals(testProfile.host, profile.host)
+            Assert.assertEquals(testProfile.name, profile.name)
+            Assert.assertEquals(5900, profile.port)
+            Assert.assertEquals("auto", profile.remotePlatform)
+        }
+        com.gaurav.avnc.pollingAssert {
+            onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+        }
     }
 
-    @Test
-    fun createAdvancedProfile() {
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        onView(withText(R.string.title_advanced)).doClick()
-        checkAdvancedModeIsOpen()
-        onView(withHint(R.string.hint_server_name)).doTypeText(testProfile.name)
-        onView(withHint(R.string.hint_host)).doTypeText(testProfile.host)
-        closeSoftKeyboard()
-        onView(withText(R.string.title_save)).doClick()
-
-        onView(withText(R.string.msg_server_profile_added)).checkWillBeDisplayed()
-        onView(allOf(
-                withParent(withId(R.id.servers)),
-                hasDescendant(withText(testProfile.name)),
-                hasDescendant(withText(testProfile.host)))
-        ).checkWillBeDisplayed()
+    @Test fun emptyAddressShowsInlineErrorAndKeepsEditorOpen() {
+        openEditor()
+        closeEditorKeyboard()
+        onView(withId(R.id.save_btn)).doClick()
+        onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.matches(
+                androidx.test.espresso.matcher.ViewMatchers.hasErrorText(targetContext.getString(R.string.msg_required))))
+        Assert.assertTrue(kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList() }.isEmpty())
     }
 
-    @Test
-    fun dataSharingBetweenSimpleAndAdvanceMode() {
-        // If user switches to advanced mode after making some changes in simple mode,
-        // those changes should not be lost.
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        onView(withHint(R.string.hint_server_name)).doTypeText(testProfile.name)
-        onView(withHint(R.string.hint_host)).doTypeText(testProfile.host)
-
-        closeSoftKeyboard()
-        onView(withText(R.string.title_advanced)).doClick()
-
-        checkAdvancedModeIsOpen()
-        onView(allOf(withHint(R.string.hint_host), withText(testProfile.host))).checkIsDisplayed()
-        onView(allOf(withHint(R.string.hint_server_name), withText(testProfile.name))).checkIsDisplayed()
+    @Test fun expandingAdvancedKeepsTheSameDraft() {
+        openEditor()
+        onView(withId(R.id.host)).doTypeText(testProfile.host)
+        onView(withId(R.id.name)).doTypeText(testProfile.name)
+        closeEditorKeyboard()
+        onView(withId(R.id.advanced_toggle)).perform(ViewActions.scrollTo()).doClick()
+        onView(withId(R.id.use_repeater)).perform(ViewActions.scrollTo()).checkIsDisplayed()
+        onView(withId(R.id.host)).perform(ViewActions.scrollTo()).check(
+                androidx.test.espresso.assertion.ViewAssertions.matches(withText(testProfile.host)))
+        onView(withId(R.id.save_btn)).doClick()
+        com.gaurav.avnc.pollingAssert {
+            Assert.assertEquals(testProfile.host, kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList().single() }.host)
+        }
     }
 
-    @Test
-    fun directlyOpenAdvancedMode() {
-        // open advanced mode
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        closeSoftKeyboard()
-        onView(withText(R.string.title_advanced)).doClick()
-        checkAdvancedModeIsOpen()
-
-        // set as default
-        Espresso.openActionBarOverflowOrOptionsMenu(targetContext)
-        onView(withText(R.string.title_always_show_advanced_editor)).doClick()
-        Espresso.pressBack()
-
-        // it should now open by default
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        checkAdvancedModeIsOpen()
-        Assert.assertTrue(targetPrefs.getBoolean("prefer_advanced_editor", false))
+    @Test fun rotationAndContinueEditingKeepDraftThenDiscardLeavesDatabaseEmpty() {
+        openEditor()
+        onView(withId(R.id.host)).doTypeText(testProfile.host)
+        onView(withId(R.id.name)).doTypeText(testProfile.name)
+        closeEditorKeyboard()
+        activityRule.scenario.recreate()
+        onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.matches(withText(testProfile.host)))
+        onView(withId(R.id.name)).check(androidx.test.espresso.assertion.ViewAssertions.matches(withText(testProfile.name)))
+        closeEditorKeyboard()
+        onView(withContentDescription(R.string.quick_editor_close)).doClick()
+        onView(withText(R.string.quick_editor_continue)).doClick()
+        onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.matches(withText(testProfile.host)))
+        onView(withContentDescription(R.string.quick_editor_close)).doClick()
+        onView(withText(R.string.quick_editor_discard)).doClick()
+        onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+        Assert.assertTrue(kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList() }.isEmpty())
     }
 
-    @Test
-    fun tryProfileBeforeSaving() {
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        closeSoftKeyboard()
-        onView(withText(R.string.title_advanced)).doClick()
-        checkAdvancedModeIsOpen()
+    @Test fun advancedPreferenceOpensConnectionGroup() {
+        targetPrefs.edit { putBoolean("prefer_advanced_editor", true) }
+        openEditor()
+        onView(withId(R.id.use_repeater)).perform(ViewActions.scrollTo()).checkIsDisplayed()
+    }
 
+    @Test fun rotationDuringSaveRetainsBusyStateAndConnectsOnlyOnce() {
+        openEditor()
+        onView(withId(R.id.host)).doTypeText(testProfile.host)
+        closeEditorKeyboard()
+        val pending = kotlinx.coroutines.CompletableDeferred<ServerProfile>()
+        lateinit var vm: com.gaurav.avnc.viewmodel.EditorViewModel
+        var connections = 0
+        activityRule.scenario.onActivity { activity ->
+            val editor = activity.supportFragmentManager.findFragmentByTag("profileEditor")!!
+            vm = androidx.lifecycle.ViewModelProvider(editor)[com.gaurav.avnc.viewmodel.EditorViewModel::class.java]
+            Assert.assertTrue(vm.submit(true, { pending.await() }) { connections++ })
+        }
+        activityRule.scenario.recreate()
+        activityRule.scenario.onActivity { activity ->
+            val editor = activity.supportFragmentManager.findFragmentByTag("profileEditor")!!
+            val retained = androidx.lifecycle.ViewModelProvider(editor)[com.gaurav.avnc.viewmodel.EditorViewModel::class.java]
+            Assert.assertSame(vm, retained)
+            Assert.assertEquals(com.gaurav.avnc.viewmodel.EditorViewModel.SaveState.SAVING, retained.saveState.value)
+            Assert.assertFalse(retained.submit(true, { error("Duplicate save") }) { connections++ })
+        }
+        pending.complete(ServerProfile(ID = 71L, host = testProfile.host))
+        com.gaurav.avnc.pollingAssert {
+            activityRule.scenario.onActivity {
+                Assert.assertEquals(1, connections)
+                Assert.assertEquals(71L, vm.profile.ID)
+            }
+            onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+        }
+    }
+
+    @Test fun pastedVncLinkExtractsAddressAndDefaultPortButPreservesAuthentication() {
+        openEditor()
+        onView(withId(R.id.password)).perform(ViewActions.replaceText("typed-password"))
+        onView(withId(R.id.host)).perform(ViewActions.replaceText(
+                "vnc://desktop.example:5901/?VncPassword=link-secret&SecurityType=2&SshPassword=ssh-secret"))
+        onView(withId(R.id.address_feedback)).check(androidx.test.espresso.assertion.ViewAssertions.matches(
+                withText(R.string.quick_editor_address_settings)))
+        onView(withId(R.id.password)).check(androidx.test.espresso.assertion.ViewAssertions.matches(withText("typed-password")))
+        closeEditorKeyboard()
+        onView(withId(R.id.save_btn)).doClick()
+        com.gaurav.avnc.pollingAssert {
+            val saved = kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList().single() }
+            Assert.assertEquals("desktop.example", saved.host)
+            Assert.assertEquals(5901, saved.port)
+            Assert.assertEquals("typed-password", saved.password)
+            Assert.assertEquals(0, saved.securityType)
+            Assert.assertEquals("", saved.sshPassword)
+            Assert.assertEquals(ServerProfile.SSH_AUTH_KEY, saved.sshAuthType)
+        }
+    }
+
+    @Test fun explicitPortWinsOverPastedAddressEvenAfterRotation() {
+        openEditor()
+        closeEditorKeyboard()
+        onView(withId(R.id.advanced_toggle)).perform(ViewActions.scrollTo()).doClick()
+        onView(withId(R.id.port)).perform(ViewActions.scrollTo(), ViewActions.replaceText("6001"))
+        onView(withId(R.id.host)).perform(ViewActions.scrollTo(), ViewActions.replaceText("[2001:db8::1]:5901"))
+        closeEditorKeyboard()
+        activityRule.scenario.recreate()
+        onView(withId(R.id.save_btn)).doClick()
+        com.gaurav.avnc.pollingAssert {
+            val saved = kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList().single() }
+            Assert.assertEquals("2001:db8::1", saved.host)
+            Assert.assertEquals(6001, saved.port)
+        }
+    }
+
+    @Test fun addressAndPortValidateImmediatelyWithoutAnInitialEmptyDraftError() {
+        openEditor()
+        onView(withId(R.id.host)).check { view, _ -> Assert.assertNull((view as android.widget.EditText).error) }
+        onView(withId(R.id.host)).perform(ViewActions.replaceText("https://wrong-protocol.example"))
+        onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.matches(
+                androidx.test.espresso.matcher.ViewMatchers.hasErrorText(targetContext.getString(R.string.quick_editor_invalid_address))))
+        closeEditorKeyboard()
+        onView(withId(R.id.advanced_toggle)).perform(ViewActions.scrollTo()).doClick()
+        onView(withId(R.id.port)).perform(ViewActions.scrollTo(), ViewActions.replaceText("70000"))
+        onView(withId(R.id.port)).check(androidx.test.espresso.assertion.ViewAssertions.matches(
+                androidx.test.espresso.matcher.ViewMatchers.hasErrorText(targetContext.getString(R.string.quick_editor_invalid_port))))
+        closeEditorKeyboard()
+        onView(withId(R.id.save_btn)).doClick()
+        com.gaurav.avnc.pollingAssert {
+            onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.matches(
+                    androidx.test.espresso.matcher.ViewMatchers.hasFocus()))
+        }
+        Assert.assertTrue(kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList() }.isEmpty())
+    }
+
+    @Test fun saveAndConnectPersistsBeforeLaunchingViewer() {
         val server = TestServer()
         server.start()
-        onView(withHint(R.string.hint_host)).doTypeText(server.host)
-        onView(withId(R.id.port)).perform(ViewActions.clearText()).doTypeText(server.port.toString())
-        onView(withText(R.string.title_try)).doClick()
-
-        onView(withId(R.id.frame_view)).checkWillBeDisplayed()
-        onView(withId(R.id.status_container)).checkWillBeHidden()
-
-        Espresso.pressBack()
-        onView(withText(R.string.title_try)).checkWillBeDisplayed()
-        checkAdvancedModeIsOpen()
+        try {
+            openEditor()
+            onView(withId(R.id.host)).doTypeText(server.host)
+            closeEditorKeyboard()
+            onView(withId(R.id.advanced_toggle)).perform(ViewActions.scrollTo()).doClick()
+            onView(withId(R.id.port)).perform(ViewActions.scrollTo(), ViewActions.replaceText(server.port.toString()))
+            closeEditorKeyboard()
+            onView(withId(R.id.save_connect_btn)).doClick()
+            onView(withId(R.id.frame_view)).checkWillBeDisplayed()
+            val saved = kotlinx.coroutines.runBlocking { dbRule.db.serverProfileDao.getList().single() }
+            Assert.assertTrue(saved.ID > 0)
+            Assert.assertEquals(server.port, saved.port)
+            Assert.assertEquals(server.host, saved.host)
+            com.gaurav.avnc.pollingAssert {
+                androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    val viewer = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                            .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                            .filterIsInstance<com.gaurav.avnc.ui.vnc.VncActivity>().single()
+                    val vm = viewer.viewModel
+                    Assert.assertEquals("${vm.profileLive.value?.host}:${vm.profileLive.value?.port}; ${vm.disconnectReason.value}",
+                            com.gaurav.avnc.viewmodel.VncViewModel.State.Connected, vm.state.value)
+                }
+            }
+            onView(withId(R.id.status_container)).checkWillBeHidden()
+            Espresso.pressBack()
+            onView(withId(R.id.host)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+        } finally { server.stop() }
     }
 }
 
@@ -214,19 +318,17 @@ class PrivateKeyTest {
             -----END PRIVATE KEY-----
         """.trimIndent()
 
-    @Rule
-    @JvmField
-    val activityRule = ActivityScenarioRule(HomeActivity::class.java)
+    private val activityRule = ActivityScenarioRule(HomeActivity::class.java)
+    @Rule @JvmField val rules: RuleChain = RuleChain.outerRule(HomeTestPreferencesRule())
+            .around(EmptyDatabaseRule()).around(activityRule)
 
     @Before
     fun before() {
         Intents.init()
         targetPrefs.edit { putBoolean("prefer_advanced_editor", true) }
-        onView(withContentDescription(R.string.desc_add_new_server_btn)).doClick()
-        onView(withId(R.id.scroll_view)).performWithTimeout(ScrollToBottom())
-        onView(withId(R.id.use_ssh_tunnel)).doClick()
-        onView(withId(R.id.scroll_view)).performWithTimeout(ScrollToBottom())
-        onView(withId(R.id.key_import_btn)).checkWillBeCompletelyDisplayed()
+        onView(withId(R.id.home_add)).doClick()
+        onView(withId(R.id.use_ssh_tunnel)).perform(ViewActions.scrollTo()).doClick()
+        onView(withId(R.id.key_import_btn)).perform(ViewActions.scrollTo()).checkWillBeCompletelyDisplayed()
     }
 
     @After

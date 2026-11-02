@@ -56,25 +56,32 @@ class MacViewerUiTest : VncSessionTest() {
 
     private fun dialogChoice(label: Int) = onView(withText(startsWith(targetContext.getString(label)))).inRoot(isDialog())
 
-    @Test fun keyboardReusesOneMacRowAndNeverOpensSystemIme() {
+    @Test fun keyboardReusesOrderedMainTabsAndNeverOpensSystemIme() {
         macSession()
         vncSession.run {
             vncSession.onActivity { activity ->
-                assertEquals(1, descendants(activity.binding.viewerRoot).count { it.id == R.id.mac_controls_row && it.isShown })
-                assertNotNull(activity.binding.frameContainer.findViewById<View>(R.id.mac_dock))
-                activity.showKeyboard()
+                val capsule = activity.findViewById<View>(R.id.controls_capsule)
+                assertTrue(capsule.isShown)
+                assertEquals(listOf("input_tab_keyboard", "input_tab_touchpad", "input_tab_shortcuts", "input_more"),
+                        descendants(capsule).mapNotNull { it.tag?.toString() }.filter { it.startsWith("input_") })
+                assertTrue(activity.findViewById<View>(R.id.keyboard_btn).performClick())
             }
             vncSession.onActivity { activity ->
-                val keyboard = descendants(activity.computerKeyboard.container)
-                assertEquals(1, keyboard.count { it.id == R.id.mac_controls_row })
-                assertEquals(1, keyboard.count { it.id == R.id.keyboard_touchpad })
-                assertEquals(1, keyboard.count { it.id == R.id.keyboard_more })
-                assertEquals(1, descendants(activity.binding.viewerRoot).count { it.id == R.id.mac_controls_row && it.isShown })
-                assertFalse(activity.binding.frameContainer.findViewById<View>(R.id.controls_capsule).isShown)
+                val keyboard = activity.computerKeyboard.container
+                val header = checkNotNull(keyboard.findViewWithTag<View>("keyboard_header"))
+                assertEquals(listOf("input_tab_keyboard", "input_tab_touchpad", "input_tab_shortcuts", "input_more"),
+                        descendants(header).mapNotNull { it.tag?.toString() }.filter { it.startsWith("input_") })
+                assertNotNull(header.findViewById<View>(R.id.keyboard_tab))
+                assertNotNull(header.findViewById<View>(R.id.keyboard_touchpad))
+                assertNotNull(header.findViewById<View>(R.id.keyboard_shortcuts))
+                assertNotNull(header.findViewById<View>(R.id.keyboard_more))
+                assertNull(keyboard.findViewById<View>(R.id.mac_controls_row))
+                assertFalse(activity.findViewById<View>(R.id.controls_capsule).isShown)
                 assertFalse(isKeyboardVisible(activity.binding.inputView))
-                keyboard.first { it.id == R.id.keyboard_btn }.performClick()
+                assertTrue(header.findViewWithTag<View>("keyboard_close").performClick())
                 assertFalse(activity.computerKeyboard.isVisible)
-                assertEquals(1, descendants(activity.binding.viewerRoot).count { it.id == R.id.mac_controls_row && it.isShown })
+                assertTrue(activity.findViewById<View>(R.id.controls_capsule).isShown)
+                assertEquals(0, descendants(activity.binding.viewerRoot).count { it.id == R.id.mac_controls_row && it.isShown })
             }
         }
         assertTrue(vncSession.server.receivedKeySyms.isEmpty())
@@ -156,23 +163,26 @@ class MacViewerUiTest : VncSessionTest() {
         assertTrue(vncSession.server.receivedKeySyms.isEmpty())
     }
 
-    @Test fun dockButtonUsesShortcutOrEdgeAndRespectsReadOnly() {
+    @Test fun dockInMoreUsesShortcutOrEdgeAndRespectsReadOnly() {
         macSession()
         vncSession.run {
             vncSession.onActivity { activity ->
                 activity.setDockActivation("shortcut")
-                activity.binding.frameContainer.findViewById<View>(R.id.mac_dock).performClick()
+                assertTrue(activity.findViewById<View>(R.id.controls_more).performClick())
+                checkNotNull(activity.binding.viewerRoot.findViewWithTag<View>("controls_mac_dock")).performClick()
             }
             pollingAssert { assertEquals(listOf(XKeySym.XK_Control_L, XKeySym.XK_F3), vncSession.server.receivedKeyDowns) }
             vncSession.onActivity { activity ->
                 activity.setDockActivation("bottom")
-                activity.binding.frameContainer.findViewById<View>(R.id.mac_dock).performClick()
+                assertTrue(activity.findViewById<View>(R.id.controls_more).performClick())
+                checkNotNull(activity.binding.viewerRoot.findViewWithTag<View>("controls_mac_dock")).performClick()
             }
             pollingAssert { assertTrue(vncSession.server.receivedPointerEvents.any { it.mask == 0 && it.x == 100 && it.y == 119 }) }
             val count = vncSession.server.receivedPointerEvents.size
             vncSession.onActivity { activity ->
                 activity.viewModel.setViewMode(ServerProfile.VIEW_MODE_NO_INPUT)
-                assertFalse(activity.binding.frameContainer.findViewById<View>(R.id.mac_dock).isEnabled)
+                assertTrue(activity.findViewById<View>(R.id.controls_more).performClick())
+                assertFalse(checkNotNull(activity.binding.viewerRoot.findViewWithTag<View>("controls_mac_dock")).isEnabled)
                 activity.performMacDock()
             }
             assertEquals(count, vncSession.server.receivedPointerEvents.size)

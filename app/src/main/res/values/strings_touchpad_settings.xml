@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="touchpad_appearance_title">Touchpad appearance</string>
+    <string name="touchpad_size_title">Size (%)</string>
+    <string name="touchpad_size_summary">75–150%. Keeps controls easy to tap and fits the available screen.</string>
+    <string name="touchpad_opacity_title">Opacity (%)</string>
+    <string name="touchpad_opacity_summary">30–100%. Lower values reveal more of the remote desktop.</string>
+</resources>

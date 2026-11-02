@@ -14,6 +14,8 @@ import com.gaurav.avnc.util.broadcastWoLPackets
 import com.gaurav.avnc.viewmodel.service.SshClient
 import com.gaurav.avnc.vnc.VncClient
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import java.io.IOException
 import kotlin.concurrent.thread
 
 /**
@@ -40,13 +42,14 @@ class RemoteSession(private val observer: Observer) {
     private val id = sessionCounter.incrementAndGet()
     private val tag = "RemoteSession[$id]"
 
-    private var vncClient: VncClient? = null
-    private var sshClient: SshClient? = null
+    @Volatile private var vncClient: VncClient? = null
+    @Volatile private var sshClient: SshClient? = null
     private var messenger: Messenger? = null
     private var sessionThread: Thread? = null
 
     @Volatile
     private var stopRequested = false
+    private val sendFailure = AtomicReference<Throwable?>()
 
     /**
      * Starts remote session for given [profile].
@@ -68,6 +71,9 @@ class RemoteSession(private val observer: Observer) {
 
         log("Requesting session stop")
         stopRequested = true
+        vncClient?.cancel()
+        sshClient?.cancel()
+        sessionThread?.interrupt() // Also release a worker awaiting a credential/confirmation.
     }
 
 
@@ -77,13 +83,13 @@ class RemoteSession(private val observer: Observer) {
         return thread(name = tag) {
             log("Session started")
 
-            runCatching {
-                startConnection(profile)
-            }.let {
-                handleConnectionEnd(it)
+            val result = runCatching { startConnection(profile) }
+            Thread.interrupted() // Stop may have interrupted a native call rather than a JVM wait.
+            try {
+                stopSession()
+            } finally {
+                handleConnectionEnd(sendFailure.get()?.let { Result.failure(it) } ?: result)
             }
-
-            stopSession()
         }
     }
 
@@ -92,6 +98,7 @@ class RemoteSession(private val observer: Observer) {
         log("Preparing clients")
         vncClient = VncClient(observer)
         sshClient = SshClient(observer)
+        checkActive()
         configureClient(vncClient!!, profile)
 
         handleWoL(profile)
@@ -100,6 +107,7 @@ class RemoteSession(private val observer: Observer) {
 
 
     private fun connect(profile: ServerProfile, vncClient: VncClient, sshClient: SshClient) {
+        checkActive()
         log("Connecting to server")
         observer.onConnecting()
 
@@ -115,10 +123,19 @@ class RemoteSession(private val observer: Observer) {
             else -> throw IllegalStateException("Unknown Channel: ${profile.channelType}")
         }
 
-        messenger = Messenger(vncClient)
+        checkActive()
+        messenger = Messenger(vncClient) { error ->
+            if (sendFailure.compareAndSet(null, error)) {
+                vncClient.cancel()
+                sshClient.cancel()
+            }
+        }
 
         log("Connected to server")
-        observer.onConnected(vncClient, messenger!!)
+        synchronized(this) {
+            checkActive()
+            observer.onConnected(vncClient, messenger!!)
+        }
 
         messageLoop(vncClient)
     }
@@ -130,14 +147,21 @@ class RemoteSession(private val observer: Observer) {
     }
 
     private fun stopSession() {
-        messenger?.shutdown()
-        vncClient?.cleanup()
-        sshClient?.close()
+        // Cancel both transports before joining the sender; every resource gets cleanup.
+        vncClient?.cancel()
+        sshClient?.cancel()
+        runCatching { messenger?.shutdown() }.onFailure { logE("Sender cleanup failed", it) }
+        runCatching { vncClient?.cleanup() }.onFailure { logE("VNC cleanup failed", it) }
+        runCatching { sshClient?.close() }.onFailure { logE("SSH cleanup failed", it) }
 
         messenger = null
         vncClient = null
         sshClient = null
         log("Session stopped")
+    }
+
+    private fun checkActive() {
+        if (stopRequested) throw IOException("Connection cancelled")
     }
 
 
@@ -168,20 +192,16 @@ class RemoteSession(private val observer: Observer) {
     }
 
     private fun handleConnectionEnd(result: Result<Unit>) {
-        runCatching {
-            result.onFailure {
-                if (!stopRequested) {
-                    logE("Connection error", it)
-                    observer.onConnectionError(it)
-                }
+        result.onFailure {
+            if (!stopRequested) {
+                logE("Connection error", it)
+                runCatching { observer.onConnectionError(it) }
+                        .onFailure { error -> logE("Error reporting connection failure", error) }
             }
-
-            log("Disconnected from server")
-            observer.onDisconnected()
-
-        }.onFailure {
-            log("Error handling connection end: $it")
         }
+        log("Disconnected from server")
+        runCatching { observer.onDisconnected() }
+                .onFailure { logE("Error handling connection end", it) }
     }
 
     private fun log(msg: String) = Log.i(tag, msg)

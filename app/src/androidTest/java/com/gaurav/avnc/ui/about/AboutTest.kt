@@ -33,6 +33,7 @@ class AboutTest {
         //Check some libs
         onView(withText("LibVNCClient")).checkIsDisplayed()
         onView(withText("Libjpeg-turbo")).checkIsDisplayed()
+        onView(withText("LibreSSL")).checkIsDisplayed()
     }
 
     @Test
@@ -40,5 +41,6 @@ class AboutTest {
         onView(withId(R.id.licence_btn)).doClick()
         onView(withId(R.id.license_text)).checkIsDisplayed()
         onView(withSubstring("GNU General Public License, version 3 or later")).checkIsDisplayed()
+        onView(withSubstring("LibreSSL files are retained")).checkIsDisplayed()
     }
 }

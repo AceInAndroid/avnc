@@ -150,13 +150,13 @@
     <string name="pref_zoom_max">Maksimums</string>
     <string name="pref_per_orientation_zoom">Katrai orientācijai sava tālummaiņa</string>
     <string name="title_unlock_dialog">Atbloķējiet, lai turpinātu</string>
-    <string name="msg_about_app">Ātrs un drošs VNC klients. Pārraugiet un kontrolējiet jebkuru attālo ierīci, kurā darbojas VNC serveris.\n\n\nAVNC ir atvērtā koda un kopēttieši lietotne, kas izstrādāta ar daudzu dalībnieku palīdzību.</string>
+    <string name="msg_about_app">Ātrs un drošs VNC klients. Pārraugiet un kontrolējiet jebkuru attālo ierīci, kurā darbojas VNC serveris.\n\n\nFastVNC ir atvērtā koda un kopēttieši lietotne, kas izstrādāta ar daudzu dalībnieku palīdzību.</string>
     <string name="msg_pip_not_supported">Netiek atbalstīts šajā ierīcē</string>
     <string name="msg_invalid_key_file">Nederīga privātās atslēgas datne</string>
     <string name="msg_button_up_delay_help">Klikšķu notikumu aizkavēšana var palīdzēt dažos retos gadījumos, kad lietotne nereaģē uz klikšķiem.</string>
     <string name="msg_wake_on_lan_help">Pamodināt, kas atrodas vietējā tīkla zonā - Wake-on-LAN (WoL), var izmantot, lai attālināti ieslēgtu datoru.
 \n
-\nVispirms konfigurējiet WoL attālajā datorā, pēc tam iespējojiet to AVNC.
+\nVispirms konfigurējiet WoL attālajā datorā, pēc tam iespējojiet to FastVNC.
 \nKad tas ir iespējots, WoL burvju pakete tiks automātiski nosūtīta pirms savienojuma izveides ar šo serveri.</string>
     <string name="desc_discovery_stop_btn">Pārtraukt serveru atklāšanu</string>
     <string name="desc_discovery_running">Notiek serveru atklāšana jūsu tīklā</string>

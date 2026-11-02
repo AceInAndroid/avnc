@@ -1,4 +1,4 @@
-AVNC adalah klien VNC sumber terbuka untuk Android. Aplikasi ini memungkinkan Anda mengendalikan perangkat apa pun yang menjalankan server VNC dari jarak jauh.
+FastVNC adalah klien VNC sumber terbuka untuk Android. Aplikasi ini memungkinkan Anda mengendalikan perangkat apa pun yang menjalankan server VNC dari jarak jauh.
 
 Fitur:
 

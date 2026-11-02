@@ -11,6 +11,7 @@ package com.gaurav.avnc.util
 import android.util.Log
 import androidx.activity.viewModels
 import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.biometric.BiometricPrompt.AuthenticationResult
 import androidx.biometric.FingerprintDialogFragment
 import androidx.biometric.auth.AuthPromptCallback
@@ -44,16 +45,20 @@ class DeviceAuthPrompt(private val activity: FragmentActivity) {
     private val viewModel by activity.viewModels<PromptViewModel>()
     private var onAuthSuccess: ((Any?) -> Unit)? = null
     private var onAuthFail: ((String) -> Unit)? = null
+    private var onAuthCancel: (() -> Unit)? = null
 
 
     /**
      * Setup auth callbacks.
      * Should be called from onCreate() of the host activity/fragment.
      * If an auth session is active, it will be updated with given callbacks.
+     * [onCancel] handles user/system dismissal separately when supplied. Existing
+     * callers retain their original behavior: cancellation is delivered to [onFail].
      */
-    fun init(onSuccess: (Any?) -> Unit, onFail: (String) -> Unit) {
+    fun init(onSuccess: (Any?) -> Unit, onFail: (String) -> Unit, onCancel: (() -> Unit)? = null) {
         onAuthSuccess = onSuccess
         onAuthFail = onFail
+        onAuthCancel = onCancel
 
         if (viewModel.isPromptShown)
             launch(viewModel.promptTitle, viewModel.promptTag)
@@ -108,9 +113,21 @@ class DeviceAuthPrompt(private val activity: FragmentActivity) {
         }
 
         override fun onAuthenticationError(activity: FragmentActivity?, errorCode: Int, errString: CharSequence) {
-            Log.e(javaClass.simpleName, "Authentication error: $errString [$errorCode] ")
-            onAuthFail?.invoke(errString.toString())
-            onAuthFinished()
+            val cancelled = errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                    errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                    errorCode == BiometricPrompt.ERROR_CANCELED
+            try {
+                val onCancel = onAuthCancel
+                if (cancelled && onCancel != null) {
+                    Log.d(javaClass.simpleName, "Authentication cancelled [$errorCode]")
+                    onCancel()
+                } else {
+                    Log.e(javaClass.simpleName, "Authentication error: $errString [$errorCode]")
+                    onAuthFail?.invoke(errString.toString())
+                }
+            } finally {
+                onAuthFinished()
+            }
         }
     }
 

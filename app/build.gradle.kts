@@ -1,10 +1,23 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.util.Properties
 
 plugins {
     id("com.android.application") version "9.2.1"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.2.20"
     id("org.jetbrains.kotlin.plugin.parcelize") version "2.2.20"
     id("com.android.legacy-kapt") version "9.2.1"
+}
+
+// Keep signing credentials local; an alternate path supports CI secret-file injection.
+val releaseSigningFile = providers.environmentVariable("FASTVNC_SIGNING_PROPERTIES")
+        .map { rootProject.file(it) }
+        .getOrElse(rootProject.file("private/signing/release.properties"))
+require(!providers.environmentVariable("FASTVNC_SIGNING_PROPERTIES").isPresent || releaseSigningFile.isFile) {
+    "FASTVNC_SIGNING_PROPERTIES must point to an existing signing properties file"
+}
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.isFile) releaseSigningFile.inputStream().use { load(it) }
 }
 
 android {
@@ -14,7 +27,7 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.gaurav.avnc"
+        applicationId = "tech.zhangbing.fvnc"
         minSdk = 21
         targetSdk = 36
         versionCode = 53
@@ -45,6 +58,23 @@ android {
         getByName("androidTest").assets.directories += "$projectDir/roomSchema"
     }
 
+    signingConfigs {
+        if (releaseSigningFile.isFile) {
+            create("fastVncRelease") {
+                fun required(key: String) = requireNotNull(releaseSigning.getProperty(key)?.takeIf { it.isNotBlank() }) {
+                    "Missing release signing property: $key"
+                }
+                val configuredStore = File(required("storeFile"))
+                storeFile = if (configuredStore.isAbsolute) configuredStore
+                else releaseSigningFile.parentFile.resolve(configuredStore.path)
+                storePassword = required("storePassword")
+                keyAlias = required("keyAlias")
+                keyPassword = required("keyPassword")
+                storeType = "JKS"
+            }
+        }
+    }
+
     buildTypes {
 
         debug {
@@ -53,6 +83,7 @@ android {
         }
 
         release {
+            signingConfig = signingConfigs.findByName("fastVncRelease")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -60,6 +91,7 @@ android {
 
         create("ci") {
             initWith(getByName("release"))
+            signingConfig = null
             applicationIdSuffix = ".ci"
             versionNameSuffix = " (CI)"
         }

@@ -68,10 +68,10 @@ object BiometricMocking {
         end()
     }
 
-    fun endWithError(errorMessage: String) {
+    fun endWithError(errorMessage: String, errorCode: Int = 123) {
         waitForAuthStart()
         runOnMainSync {
-            promptCallback?.onAuthenticationError(promptHost, 123, errorMessage)
+            promptCallback?.onAuthenticationError(promptHost, errorCode, errorMessage)
         }
         end()
     }

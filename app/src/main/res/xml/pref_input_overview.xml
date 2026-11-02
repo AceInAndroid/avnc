@@ -1,0 +1,16 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    app:title="@string/settings_input">
+    <SwitchPreference app:key="use_system_keyboard" app:defaultValue="false"
+        app:title="@string/pref_system_keyboard" app:summary="@string/pref_system_keyboard_summary" />
+    <SeekBarPreference android:max="150" app:min="75" app:defaultValue="100" app:key="touchpad_size"
+        app:showSeekBarValue="true" app:title="@string/touchpad_size_title" app:summary="@string/touchpad_size_summary" />
+    <SeekBarPreference android:max="100" app:min="30" app:defaultValue="100" app:key="touchpad_opacity"
+        app:showSeekBarValue="true" app:title="@string/touchpad_opacity_title" app:summary="@string/touchpad_opacity_summary" />
+    <Preference app:key="settings_input_details" app:title="@string/settings_input_details"
+        app:summary="@string/settings_input_details_summary" app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Input" />
+    <Preference app:key="remote_input_templates" app:title="@string/remote_input_templates"
+        app:summary="@string/remote_input_templates_summary" app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Platform" />
+    <Preference app:key="restore_recommended_input" app:title="@string/settings_restore_group"
+        app:summary="@string/settings_restore_group_summary" />
+</PreferenceScreen>

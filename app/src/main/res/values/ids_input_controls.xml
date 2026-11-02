@@ -21,4 +21,12 @@
     <item name="mac_mission_control" type="id" />
     <item name="mac_displays" type="id" />
     <item name="mac_quality" type="id" />
+    <item name="keyboard_tab" type="id" />
+    <item name="keyboard_shortcuts" type="id" />
+    <item name="shortcuts_btn" type="id" />
+    <item name="input_pages" type="id" />
+    <item name="input_page_header" type="id" />
+    <item name="input_touchpad_surface_host" type="id" />
+    <item name="input_page_close" type="id" />
+    <item name="touchpad_edit_actions" type="id" />
 </resources>

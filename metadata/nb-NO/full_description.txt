@@ -1,4 +1,4 @@
-AVNC er en fri VNC-klient for Android. Det tillater deg å kontrollere enheter som har en VNC-tjener annensteds hen.
+FastVNC er en fri VNC-klient for Android. Det tillater deg å kontrollere enheter som har en VNC-tjener annensteds hen.
 
 Funksjoner:
 

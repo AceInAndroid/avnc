@@ -12,6 +12,7 @@ import java.io.DataInputStream
 import java.io.OutputStream
 import java.math.BigInteger
 import java.net.ServerSocket
+import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -39,7 +40,7 @@ import kotlin.random.Random
  * It also enables us to completely control the behaviour of the server,
  * so we can simulate different scenarios, error conditions etc.
  */
-class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
+class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10, listenPort: Int = 0) {
 
     //Protocol config
     private var protocol = "RFB 003.008\n"
@@ -49,7 +50,10 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
     private val frameBuffer = ByteArray(frameWidth * frameHeight * 4)
 
     //Server config
-    private val ss = ServerSocket(0)
+    private val ss = ServerSocket().apply {
+        reuseAddress = true
+        bind(InetSocketAddress(listenPort))
+    }
     private val serverJob = Thread { theServer() }
     private val queuedActions = LinkedTransferQueue<(OutputStream) -> Unit>()
     val host = ss.inetAddress.hostAddress!!
@@ -74,7 +78,8 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
     data class UpdateRequest(val incremental: Boolean, val x: Int, val y: Int, val width: Int, val height: Int)
     val receivedUpdateRequests = java.util.concurrent.CopyOnWriteArrayList<UpdateRequest>()
     val receivedEncodingLists = java.util.concurrent.CopyOnWriteArrayList<List<Int>>()
-    var receivedCutText = ""; private set
+    val receivedCutTexts = java.util.concurrent.CopyOnWriteArrayList<String>()
+    @Volatile var receivedCutText = ""; private set
     var receivedIncrementalUpdateRequests = 0; private set
 
 
@@ -281,6 +286,7 @@ class TestServer(name: String = "Friends", width: Int = 10, height: Int = 10) {
                     // TCP may split a clipboard message across multiple reads.
                     input.readFully(textBuffer)
                     receivedCutText = textBuffer.toString(StandardCharsets.ISO_8859_1)
+                    receivedCutTexts.add(receivedCutText)
                 }
 
                 -1 -> break //EOF

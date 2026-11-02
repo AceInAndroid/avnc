@@ -55,7 +55,8 @@ class VirtualKeysEditor : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        activity?.setTitle(R.string.pref_customize_virtual_keys)
+        updateSettingsTitle(getString(R.string.pref_customize_virtual_keys))
+        settingsRoot()?.setPageAction(getString(R.string.title_load_defaults), ::loadDefaults)
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -97,7 +98,7 @@ class VirtualKeysEditor : Fragment() {
         binding.saveBtn.setOnClickListener { saveKeys() }
         binding.cancelBtn.setOnClickListener { finish() }
 
-        requireActivity().addMenuProvider(object : MenuProvider {
+        if (settingsRoot() == null) requireActivity().addMenuProvider(object : MenuProvider {
             override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                 menu.add(R.string.title_load_defaults).setOnMenuItemClickListener { loadDefaults(); true }
             }

@@ -14,7 +14,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import com.gaurav.avnc.R
 import com.gaurav.avnc.databinding.FragmentWelcomeBinding
+import com.gaurav.avnc.ui.about.AboutActivity
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -24,14 +26,12 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
  */
 class WelcomeFragment : BottomSheetDialogFragment() {
 
-    private val GITHUB_RELEASE_URL = "https://github.com/gujjwal00/avnc/releases"
-    private val PLAY_APP_URL = "market://details?id=com.gaurav.avnc"
-    private val PLAY_WEB_URL = "https://play.google.com/store/apps/details?id=com.gaurav.avnc"
+    private val GITHUB_RELEASE_URL = "${AboutActivity.GIT_REPO_URL}/releases"
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val binding = FragmentWelcomeBinding.inflate(inflater, container, false)
         binding.changelogBtn.setOnClickListener { openChangelog() }
-        binding.rateBtn.setOnClickListener { openAppStore() }
+        binding.rateBtn.setOnClickListener { openProject() }
         binding.closeBtn.setOnClickListener { dismiss() }
         with(requireDialog() as BottomSheetDialog) {
             setCanceledOnTouchOutside(false)
@@ -48,15 +48,12 @@ class WelcomeFragment : BottomSheetDialogFragment() {
         runCatching { startActivity(Intent.parseUri(GITHUB_RELEASE_URL, 0)) }.onFailure { warnMissingBrowser() }
     }
 
-    private fun openAppStore() {
-        runCatching { startActivity(Intent.parseUri(PLAY_APP_URL, 0)) }
-                .onFailure {
-                    runCatching { startActivity(Intent.parseUri(PLAY_WEB_URL, 0)) }
-                            .onFailure { warnMissingBrowser() }
-                }
+    private fun openProject() {
+        runCatching { startActivity(Intent.parseUri(AboutActivity.GIT_REPO_URL, 0)) }
+                .onFailure { warnMissingBrowser() }
     }
 
     private fun warnMissingBrowser() {
-        Toast.makeText(requireContext(), "Web Browser is missing", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), R.string.settings_no_browser, Toast.LENGTH_SHORT).show()
     }
 }

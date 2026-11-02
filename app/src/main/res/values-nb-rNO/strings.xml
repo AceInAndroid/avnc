@@ -127,7 +127,7 @@
     <string name="msg_about_app">En rask og sikker VNC-klient. Koble til alle enheter som har en VNC-tjener.
 \n
 \n
-\nAVNC er gemenhetslig fri programvare — laget av mange bidragsytere.</string>
+\nFastVNC er gemenhetslig fri programvare — laget av mange bidragsytere.</string>
     <string name="desc_discovered_list">Liste over oppdagede tjenere</string>
     <string name="pref_viewer">Viser</string>
     <string name="hint_repeater_host">Gjentaker-vert</string>

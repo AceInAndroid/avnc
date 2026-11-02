@@ -1,0 +1,10 @@
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="input_tab_keyboard">电脑键盘</string>
+    <string name="input_tab_shortcuts">快捷键</string>
+    <string name="input_panel_close">收起控制面板</string>
+    <string name="input_disconnect">断开连接</string>
+    <string name="input_floating_touchpad">浮动触控板</string>
+    <string name="input_shortcuts_hint">在远端执行快捷键，粘贴使用远端当前剪贴板。</string>
+    <string name="input_touchpad_hint">滑动移动光标 · 双指滑动滚动</string>
+    <string name="input_connection">连接</string>
+</resources>

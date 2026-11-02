@@ -45,6 +45,15 @@ struct JniContext {
 
 static JniContext context{};
 
+// Java and JNI housekeeping may change errno before managed code asks for it.
+// Each caller retrieves its own failure, independent of the other I/O thread.
+static thread_local int lastNativeError = 0;
+
+static jboolean captureNativeResult(rfbBool success) {
+    if (!success) lastNativeError = errno;
+    return success ? JNI_TRUE : JNI_FALSE;
+}
+
 static const char *presetName(int preset) {
     return preset == 1 ? "smooth" : preset == 2 ? "hd" : "legacy";
 }
@@ -129,8 +138,10 @@ static bool applyPendingSessionSettings(rfbClient *client) {
         success = SendFramebufferUpdateRequest(client, client->updateRect.x, client->updateRect.y,
                                                 client->updateRect.w, client->updateRect.h, FALSE);
     }
+    const int operationError = errno;
     if (preset >= 0)
         notifyStreamingPreset(client, preset, success);
+    if (!success) errno = operationError;
     return success;
 }
 
@@ -426,12 +437,35 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeClientCreate(JNIEnv *env, jobject thiz)
 
     setCallbacks(client);
     client->canHandleNewFBSize = TRUE;
+    client->connectTimeout = 10;
+    client->readTimeout = 15;
+    client->writeTimeout = 15;
+    client->IsCancelled = [](rfbClient *c) -> rfbBool { return getClientExtension(c)->isCancelled(); };
 
     //Attach reference to managed object
     auto obj = env->NewGlobalRef(thiz);
     setManagedClient(client, obj);
 
     return (jlong) client;
+}
+
+// Managed code protects native pointer lifetime while invoking cancellation.
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_gaurav_avnc_vnc_VncClient_nativeCancel(JNIEnv *, jobject, jlong client_ptr) {
+    getClientExtension((rfbClient *) client_ptr)->cancel();
+}
+
+// Configure before nativeInit; exposed separately for deterministic fault tests.
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_gaurav_avnc_vnc_VncClient_nativeConfigureTimeouts(JNIEnv *, jobject, jlong client_ptr,
+                                                          jint connectSeconds, jint readSeconds,
+                                                          jint writeSeconds) {
+    auto client = (rfbClient *) client_ptr;
+    client->connectTimeout = connectSeconds >= 0 ? connectSeconds : 10;
+    client->readTimeout = readSeconds >= 0 ? readSeconds : 15;
+    client->writeTimeout = writeSeconds >= 0 ? writeSeconds : 15;
 }
 
 extern "C"
@@ -489,14 +523,11 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeInit(JNIEnv *env, jobject /*thiz*/, jlo
                                               jstring host, jint port) {
     auto client = (rfbClient *) client_ptr;
 
+    if (rfbClientIoCancelled(client)) return captureNativeResult(FALSE);
     client->serverHost = getNativeStrCopy(env, host);
     client->serverPort = port < 100 ? port + 5900 : port;
 
-    if (rfbClientConnect(client) && rfbClientInitialise(client)) {
-        return JNI_TRUE;
-    }
-
-    return JNI_FALSE;
+    return captureNativeResult(rfbClientConnect(client) && rfbClientInitialise(client));
 }
 
 extern "C"
@@ -515,6 +546,7 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeCleanup(JNIEnv *env, jobject /*thiz*/,
 
     client->LockWriteToServer = nullptr;
     client->UnlockWriteToServer = nullptr;
+    client->IsCancelled = nullptr;
     freeClientExtension(client);
     rfbClientCleanup(client);
 }
@@ -525,24 +557,23 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeProcessServerMessage(JNIEnv * /*env*/, 
                                                               jlong client_ptr) {
     auto client = (rfbClient *) client_ptr;
 
+    if (rfbClientIoCancelled(client)) return captureNativeResult(FALSE);
     if (!applyPendingSessionSettings(client))
-        return JNI_FALSE;
+        return captureNativeResult(FALSE);
 
     auto waitResult = WaitForMessage(client, 100000);
 
     if (waitResult == 0) // Timeout
         return JNI_TRUE;
 
-    if (waitResult > 0 && HandleRFBServerMessage(client))
-        return JNI_TRUE;
-
-    return JNI_FALSE;
+    if (waitResult < 0) return captureNativeResult(FALSE);
+    return captureNativeResult(HandleRFBServerMessage(client));
 }
 
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeGetLastErrorStr(JNIEnv *env, jobject/*thiz*/) {
-    auto str = errnoToStr(errno);
+    auto str = errnoToStr(lastNativeError);
     return env->NewStringUTF(str);
 }
 
@@ -551,6 +582,7 @@ JNIEXPORT jboolean JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeSendKeyEvent(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                       jint key_sym, jint xt_code, jboolean is_down) {
     auto client = (rfbClient *) client_ptr;
+    if (rfbClientIoCancelled(client)) return captureNativeResult(FALSE);
     rfbBool down = is_down ? TRUE : FALSE;
 
     // Remap Alt key to Meta key for MacOS
@@ -560,17 +592,20 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeSendKeyEvent(JNIEnv * /*env*/, jobject 
         if (key_sym == 0xffea  /* Right alt */) key_sym = 0xffe8  /* Right meta */;
     }
 
-    if (xt_code > 0 && SendExtendedKeyEvent(client, key_sym, xt_code, down))
-        return JNI_TRUE;
-    else
-        return SendKeyEvent(client, key_sym, down);
+    // Unsupported extended keys may fall back. An I/O failure may have already
+    // sent part of the extended packet, so never append a basic key packet.
+    if (xt_code > 0 && SupportsClient2Server(client, rfbQemuEvent))
+        return captureNativeResult(SendExtendedKeyEvent(client, key_sym, xt_code, down));
+    return captureNativeResult(SendKeyEvent(client, key_sym, down));
 }
 
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeSendPointerEvent(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                           jint x, jint y, jint mask) {
-    return (jboolean) SendPointerEvent((rfbClient *) client_ptr, x, y, mask);
+    auto client = (rfbClient *) client_ptr;
+    if (rfbClientIoCancelled(client)) return captureNativeResult(FALSE);
+    return captureNativeResult(SendPointerEvent(client, x, y, mask));
 }
 
 extern "C"
@@ -578,7 +613,9 @@ JNIEXPORT jboolean JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeSendCutText(JNIEnv *env, jobject /*thiz*/, jlong client_ptr, jbyteArray bytes,
                                                      jboolean is_utf8) {
     auto client = (rfbClient *) client_ptr;
+    if (rfbClientIoCancelled(client)) return captureNativeResult(FALSE);
     auto textBuffer = env->GetByteArrayElements(bytes, nullptr);
+    if (!textBuffer) { errno = ENOMEM; return captureNativeResult(FALSE); }
     auto textLen = env->GetArrayLength(bytes);
     auto textChars = reinterpret_cast<char *>(textBuffer);
 
@@ -586,8 +623,9 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeSendCutText(JNIEnv *env, jobject /*thiz
                      ? SendClientCutTextUTF8(client, textChars, textLen)
                      : SendClientCutText(client, textChars, textLen);
 
+    auto nativeResult = captureNativeResult(result);
     env->ReleaseByteArrayElements(bytes, textBuffer, JNI_ABORT);
-    return (jboolean) result;
+    return nativeResult;
 }
 
 extern "C"

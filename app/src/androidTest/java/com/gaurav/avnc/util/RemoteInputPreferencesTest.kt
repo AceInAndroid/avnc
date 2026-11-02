@@ -35,6 +35,38 @@ class RemoteInputPreferencesTest {
         assertEquals("system", prefs.template(RemotePlatform.WINDOWS).threeFinger)
     }
 
+    @Test fun touchpadAppearancePercentagesPersistAndClampToUsableBounds() {
+        val input = AppPreferences(targetContext).input
+        assertEquals(100, input.touchpadSizePercent)
+        assertEquals(100, input.touchpadOpacityPercent)
+        targetPrefs.edit { putInt("touchpad_size", 125); putInt("touchpad_opacity", 45) }
+        assertEquals(125, AppPreferences(targetContext).input.touchpadSizePercent)
+        assertEquals(45, AppPreferences(targetContext).input.touchpadOpacityPercent)
+        targetPrefs.edit { putInt("touchpad_size", 0); putInt("touchpad_opacity", 0) }
+        assertEquals(75, input.touchpadSizePercent)
+        assertEquals(30, input.touchpadOpacityPercent)
+        targetPrefs.edit { putInt("touchpad_size", 999); putInt("touchpad_opacity", 999) }
+        assertEquals(150, input.touchpadSizePercent)
+        assertEquals(100, input.touchpadOpacityPercent)
+    }
+
+    @Test fun inputSettingsExposeAndSaveTouchpadPercentageSliders() {
+        androidx.test.core.app.ActivityScenario.launch(com.gaurav.avnc.ui.prefs.PrefsActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val fragment = com.gaurav.avnc.ui.prefs.PrefsActivity.Input()
+                activity.supportFragmentManager.beginTransaction()
+                        .replace(com.gaurav.avnc.R.id.fragment_host, fragment).commitNow()
+                val size = checkNotNull(fragment.findPreference<androidx.preference.SeekBarPreference>("touchpad_size"))
+                val opacity = checkNotNull(fragment.findPreference<androidx.preference.SeekBarPreference>("touchpad_opacity"))
+                assertEquals(75, size.min); assertEquals(150, size.max)
+                assertEquals(30, opacity.min); assertEquals(100, opacity.max)
+                size.value = 125; opacity.value = 45
+            }
+        }
+        assertEquals(125, AppPreferences(targetContext).input.touchpadSizePercent)
+        assertEquals(45, AppPreferences(targetContext).input.touchpadOpacityPercent)
+    }
+
     @Test fun platformDefaultsRemainIndependent() {
         val prefs = RemoteInputPreferences(targetContext)
         assertEquals("standard", prefs.template(RemotePlatform.MAC).inertia)
@@ -126,9 +158,9 @@ class RemoteInputPreferencesTest {
         assertEquals(3f, bounded.pointerSpeed, 0f)
         assertEquals(.25f, bounded.scrollSpeed, 0f)
         assertEquals(.25f, bounded.effectiveHorizontalSpeed, 0f)
-        val fast = template.apply(RemoteInputOverrides(scrollSpeed = 99f, horizontalSpeed = 5.5f))
-        assertEquals(6f, fast.scrollSpeed, 0f)
-        assertEquals(5.5f, fast.effectiveHorizontalSpeed, 0f)
+        val fast = template.apply(RemoteInputOverrides(scrollSpeed = 99f, horizontalSpeed = 9.5f))
+        assertEquals(10f, fast.scrollSpeed, 0f)
+        assertEquals(9.5f, fast.effectiveHorizontalSpeed, 0f)
     }
 
     @Test fun invalidShortcutEntriesDoNotReplaceValidDefaultsOrTemplate() {

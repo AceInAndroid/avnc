@@ -7,13 +7,20 @@
   -->
 
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
-    app:title="@string/pref_servers">
+    app:title="@string/settings_connection">
 
 
     <SwitchPreference
         app:defaultValue="true"
         app:key="clipboard_sync"
         app:title="@string/pref_clipboard_sync" />
+
+    <SwitchPreference
+        app:defaultValue="false"
+        app:key="clipboard_auto_send"
+        app:dependency="clipboard_sync"
+        app:title="@string/clipboard_auto_send"
+        app:summary="@string/clipboard_auto_send_summary" />
 
     <SwitchPreference
         app:defaultValue="false"

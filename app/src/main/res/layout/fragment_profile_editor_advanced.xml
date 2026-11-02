@@ -1,85 +1,58 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-  ~ Copyright (c) 2020  Gaurav Ujjwal.
-  ~
-  ~ SPDX-License-Identifier:  GPL-3.0-or-later
-  ~
-  ~ See COPYING.txt for more details.
-  -->
-
-<layout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools">
-
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<layout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" xmlns:tools="http://schemas.android.com/tools">
     <data>
-
-        <variable
-            name="viewModel"
-            type="com.gaurav.avnc.viewmodel.EditorViewModel" />
+        <variable name="viewModel" type="com.gaurav.avnc.viewmodel.EditorViewModel" />
     </data>
-
-    <com.gaurav.avnc.util.EdgeToEdgeWrapperLayout
-        android:id="@+id/edge_to_edge_wrapper"
+    <LinearLayout
+        android:id="@+id/editor_surface"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <LinearLayout
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+        <View
+            android:id="@+id/sheet_handle"
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="2dp"
+            android:importantForAccessibility="no" />
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="?colorSurface"
-            android:orientation="vertical">
-
-            <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-            <!-- Appbar                                                     -->
-            <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-
-            <com.google.android.material.appbar.AppBarLayout
-                android:id="@+id/appbar"
+            android:layout_height="wrap_content"
+            android:minHeight="64dp"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:navigationContentDescription="@string/quick_editor_close" />
+        <ScrollView
+            android:id="@+id/scroll_view"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="false"
+            android:clipToPadding="false">
+            <LinearLayout
+                android:id="@+id/editor_content"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <com.google.android.material.appbar.MaterialToolbar
-                    android:id="@+id/toolbar"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/urlbar_height"
-                    app:navigationContentDescription="@string/desc_back_btn"
-                    app:navigationIcon="@drawable/ic_arrow_back">
-
-                </com.google.android.material.appbar.MaterialToolbar>
-            </com.google.android.material.appbar.AppBarLayout>
-
-            <ScrollView
-                android:id="@+id/scroll_view"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:fadeScrollbars="false">
-
-                <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="12dp">
+                <TextView
+                    android:id="@+id/editor_subtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:animateLayoutChanges="true"
-                    android:paddingHorizontal="@dimen/padding_normal"
-                    android:paddingTop="@dimen/padding_normal"
-                    android:paddingBottom="60dp">
-
-
-                    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-                    <!-- VNC Server                                                 -->
-                    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-
-                    <EditText
-                        android:id="@+id/name"
-                        style="@style/FormField.EditText"
-                        android:drawableStart="@drawable/ic_bookmark"
-                        android:hint="@string/hint_server_name"
-                        android:importantForAutofill="no"
-                        android:inputType="text"
-                        android:text="@={viewModel.profile.name}"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
-
-                    <!--Host-->
+                    android:text="@string/quick_editor_intro"
+                    android:textSize="14sp"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="8dp" />
+                <LinearLayout
+                    android:id="@+id/basic_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="8dp"
+                    android:layout_marginBottom="12dp">
                     <EditText
                         android:id="@+id/host"
                         style="@style/FormField.EditText"
@@ -88,292 +61,29 @@
                         android:importantForAutofill="no"
                         android:inputType="textUri"
                         android:text="@={viewModel.profile.host}"
-                        app:layout_constraintEnd_toStartOf="@id/port"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/name" />
-
-
-                    <!--Port-->
-                    <EditText
-                        android:id="@+id/port"
-                        style="@style/FormField.EditText"
-                        android:layout_marginStart="0dp"
-                        android:ems="3"
-                        android:hint="@string/hint_port"
-                        android:importantForAutofill="no"
-                        android:inputType="number"
-                        android:text='@={"" +  viewModel.profile.port}'
-                        app:layout_constraintBottom_toBottomOf="@id/host"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/host" />
-
-                    <!--Repeater-->
-                    <CheckBox
-                        android:id="@+id/use_repeater"
-                        style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.useRepeater}"
-                        android:text="@string/title_use_repeater"
-                        app:layout_constraintEnd_toStartOf="@id/id_on_repeater"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/host" />
-
-                    <EditText
-                        android:id="@+id/id_on_repeater"
-                        style="@style/FormField.EditText"
-                        android:hint="@string/hint_server_id"
-                        android:importantForAutofill="no"
-                        android:inputType="number"
-                        android:minWidth="100dp"
-                        android:text="@={viewModel.idOnRepeater}"
-                        app:isVisible="@{viewModel.useRepeater}"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toEndOf="@id/use_repeater"
-                        app:layout_constraintTop_toBottomOf="@id/host" />
-
-
-                    <!--Auto Connect-->
-                    <CheckBox
-                        android:id="@+id/auto_connect"
-                        style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.profile.fConnectOnAppStart}"
-                        android:text="@string/title_connect_on_app_start"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/use_repeater" />
-
-                    <!--Wake-on-LAN-->
-                    <CheckBox
-                        android:id="@+id/wol"
-                        style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.enableWol}"
-                        android:text="@string/title_enable_wol"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/auto_connect" />
-
-                    <ImageButton
-                        android:id="@+id/wol_help_btn"
-                        style="@style/ImageButton"
-                        android:contentDescription="@string/desc_help_btn"
-                        android:src="@drawable/ic_help"
-                        app:layout_constraintBottom_toBottomOf="@id/wol"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/wol"
-                        app:tint="?colorControlNormal" />
-
-                    <EditText
-                        android:id="@+id/wol_mac"
-                        style="@style/FormField.EditText"
-                        android:drawableStart="@drawable/ic_wake_on_lan"
-                        android:hint="@string/hint_wol_mac"
-                        android:importantForAutofill="no"
-                        android:inputType="text"
-                        android:text="@={viewModel.profile.wolMAC}"
-                        app:isVisible="@{viewModel.enableWol}"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/wol" />
-
-                    <EditText
-                        android:id="@+id/wol_broadcast_address"
-                        style="@style/FormField.EditText"
-                        android:drawableStart="@drawable/ic_broadcast"
-                        android:hint="@string/hint_wol_address"
-                        android:importantForAutofill="no"
-                        android:inputType="text"
-                        android:text="@={viewModel.profile.wolBroadcastAddress}"
-                        app:isVisible="@{viewModel.enableWol}"
-                        app:layout_constraintEnd_toStartOf="@id/wol_port"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/wol_mac" />
-
-
-                    <!--Port-->
-                    <EditText
-                        android:id="@+id/wol_port"
-                        style="@style/FormField.EditText"
-                        android:layout_marginStart="0dp"
-                        android:ems="3"
-                        android:hint="@string/hint_port"
-                        android:importantForAutofill="no"
-                        android:inputType="number"
-                        android:text='@={"" +  viewModel.profile.wolPort}'
-                        app:isVisible="@{viewModel.enableWol}"
-                        app:layout_constraintBottom_toBottomOf="@id/wol_broadcast_address"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/wol_broadcast_address" />
-
-                    <!--Button-up delay-->
-                    <CheckBox
-                        android:id="@+id/button_up_delay"
-                        style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.profile.fButtonUpDelay}"
-                        android:text="@string/title_button_up_delay"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/wol_broadcast_address" />
-
-                    <ImageButton
-                        android:id="@+id/button_up_delay_help_btn"
-                        style="@style/ImageButton"
-                        android:contentDescription="@string/desc_help_btn"
-                        android:src="@drawable/ic_help"
-                        app:layout_constraintBottom_toBottomOf="@id/button_up_delay"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/button_up_delay"
-                        app:tint="?colorControlNormal" />
-
-                    <!--Resize remote desktop-->
-                    <CheckBox
-                        android:id="@+id/resize_remote_desktop"
-                        style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.profile.resizeRemoteDesktop}"
-                        android:text="@string/title_resize_remote_desktop"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/button_up_delay" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/remote_input_settings"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="16dp"
+                        android:layout_width="match_parent"
                         android:minHeight="48dp"
-                        android:text="@string/remote_input_title"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/resize_remote_desktop" />
-
-                    <!--Image Quality-->
+                        android:singleLine="true" />
                     <TextView
-                        android:id="@+id/image_quality_label"
-                        android:layout_width="wrap_content"
+                        android:id="@+id/address_feedback"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="48dp"
-                        android:labelFor="@id/image_quality"
-                        android:text="@string/title_image_quality"
-                        app:layout_constraintBottom_toBottomOf="@id/image_quality"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/image_quality" />
-
-                    <SeekBar
-                        android:id="@+id/image_quality"
-                        android:layout_width="0dp"
-                        android:layout_height="@dimen/action_btn_size"
-                        android:layout_marginVertical="@dimen/margin_small"
-                        android:layout_marginStart="@dimen/margin_large"
-                        android:enabled="@{!viewModel.useRawEncoding}"
-                        android:max="9"
-                        android:minHeight="@dimen/action_btn_size"
-                        android:progress="@={viewModel.profile.imageQuality}"
-                        app:layout_constraintEnd_toStartOf="@id/raw_encoding"
-                        app:layout_constraintStart_toEndOf="@id/image_quality_label"
-                        app:layout_constraintTop_toBottomOf="@id/remote_input_settings" />
-
-                    <CheckBox
-                        android:id="@+id/raw_encoding"
-                        android:layout_width="wrap_content"
-                        android:layout_height="@dimen/action_btn_size"
-                        android:layout_marginEnd="@dimen/margin_small"
-                        android:checked="@={viewModel.useRawEncoding}"
-                        android:text="@string/title_image_quality_raw"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toEndOf="@id/image_quality"
-                        app:layout_constraintTop_toTopOf="@id/image_quality" />
-
-
-                    <!--Gesture style-->
-                    <TextView
-                        android:id="@+id/gesture_style_label"
-                        style="@style/FormField.LabelWithIcon"
-                        android:labelFor="@id/gesture_style"
-                        android:text="@string/pref_gesture_style"
-                        app:drawableStartCompat="@drawable/ic_gesture"
-                        app:layout_constraintBottom_toBottomOf="@id/gesture_style"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/gesture_style" />
-
-                    <com.gaurav.avnc.util.SpinnerEx
-                        android:id="@+id/gesture_style"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:minHeight="@dimen/action_btn_size"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="@id/image_quality"
-                        app:layout_constraintTop_toBottomOf="@id/image_quality"
-                        app:value="@={viewModel.profile.gestureStyle}"
-                        app:valueDescriptions="@{ @stringArray/profile_editor_gesture_style_descriptions }"
-                        app:valueLabels="@{ @stringArray/profile_editor_gesture_style_labels }"
-                        app:values="@{ @stringArray/profile_editor_gesture_style_values }"
-                        tools:entries="@array/dummy_array" />
-
-                    <!--Screen orientation-->
-                    <TextView
-                        android:id="@+id/screen_orientation_label"
-                        style="@style/FormField.LabelWithIcon"
-                        android:labelFor="@id/screen_orientation"
-                        android:text="@string/title_orientation"
-                        app:drawableStartCompat="@drawable/ic_screen_rotation"
-                        app:layout_constraintBottom_toBottomOf="@id/screen_orientation"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/screen_orientation" />
-
-                    <com.gaurav.avnc.util.SpinnerEx
-                        android:id="@+id/screen_orientation"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:minHeight="@dimen/action_btn_size"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="@id/gesture_style"
-                        app:layout_constraintTop_toBottomOf="@id/gesture_style"
-                        app:value="@={viewModel.profile.screenOrientation}"
-                        app:valueLabels="@{ @stringArray/orientation_entries }"
-                        app:values="@{ @stringArray/orientation_values }"
-                        tools:entries="@array/dummy_array" />
-
-
-                    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-                    <!-- Security                                                   -->
-                    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-
-                    <TextView
-                        android:id="@+id/security_label"
-                        style="@style/FormField.LabelWithIcon"
-                        android:text="@string/title_vnc_security"
-                        app:drawableStartCompat="@drawable/ic_shield"
-                        app:layout_constraintBottom_toBottomOf="@id/security"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/security" />
-
-                    <com.gaurav.avnc.util.SpinnerEx
-                        android:id="@+id/security"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:minHeight="@dimen/action_btn_size"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="@id/screen_orientation"
-                        app:layout_constraintTop_toBottomOf="@id/screen_orientation"
-                        app:value="@={viewModel.profile.securityType}"
-                        app:valueLabels="@{ @stringArray/profile_editor_security_labels }"
-                        app:values="@{ @stringArray/profile_editor_security_values }"
-                        tools:entries="@array/dummy_array" />
-
-                    <!--Username-->
+                        android:layout_marginHorizontal="8dp"
+                        android:paddingBottom="8dp"
+                        android:visibility="gone"
+                        android:textSize="13sp"
+                        android:accessibilityLiveRegion="polite" />
                     <EditText
-                        android:id="@+id/username"
+                        android:id="@+id/name"
                         style="@style/FormField.EditText"
-                        android:autofillHints="username"
-                        android:drawableStart="@drawable/ic_person"
-                        android:hint="@string/hint_username"
+                        android:drawableStart="@drawable/ic_bookmark"
+                        android:hint="@string/hint_server_name"
+                        android:importantForAutofill="no"
                         android:inputType="text"
-                        android:text="@={viewModel.profile.username}"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/security" />
-
-
-                    <!--Password-->
+                        android:text="@={viewModel.profile.name}"
+                        android:layout_width="match_parent"
+                        android:minHeight="48dp"
+                        android:singleLine="true" />
                     <EditText
                         android:id="@+id/password"
                         style="@style/FormField.EditText"
@@ -382,163 +92,474 @@
                         android:hint="@string/hint_password"
                         android:inputType="textPassword"
                         android:text="@={viewModel.profile.password}"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/username" />
-
-
-                    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-                    <!-- SSH Tunnel                                                 -->
-                    <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-
-                    <CheckBox
-                        android:id="@+id/use_ssh_tunnel"
-                        style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.useSshTunnel}"
-                        android:text="@string/title_use_ssh_tunnel"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/password" />
-
-                    <!--SSH Options-->
-                    <androidx.constraintlayout.widget.ConstraintLayout
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
+                        android:minHeight="48dp"
+                        android:singleLine="true" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/platform_btn"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:animateLayoutChanges="true"
-                        app:isVisible="@{viewModel.useSshTunnel}"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/use_ssh_tunnel">
-
-                        <!--SSH Host-->
+                        android:minHeight="48dp"
+                        android:text="@string/remote_input_platform"
+                        android:textAllCaps="false" />
+                </LinearLayout>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/advanced_toggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/title_advanced"
+                    android:textAllCaps="false" />
+                <LinearLayout
+                    android:id="@+id/advanced_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="0dp"
+                    android:layout_marginBottom="12dp">
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/connection_header"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/quick_editor_connection"
+                        android:textAllCaps="false" />
+                    <LinearLayout
+                        android:id="@+id/connection_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp"
+                        android:layout_marginBottom="12dp">
                         <EditText
-                            android:id="@+id/ssh_host"
+                            android:id="@+id/port"
                             style="@style/FormField.EditText"
-                            android:drawableStart="@drawable/ic_computer"
-                            android:hint="@{@string/hint_ssh_host}"
-                            android:importantForAutofill="no"
-                            android:inputType="textUri"
-                            android:text="@={viewModel.profile.sshHost}"
-                            app:layout_constraintEnd_toStartOf="@id/ssh_port"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toTopOf="parent" />
-
-                        <!--Port-->
-                        <EditText
-                            android:id="@+id/ssh_port"
-                            style="@style/FormField.EditText"
+                            android:layout_marginStart="0dp"
                             android:ems="3"
-                            android:hint="@{@string/hint_ssh_port}"
+                            android:hint="@string/hint_port"
                             android:importantForAutofill="no"
                             android:inputType="number"
-                            android:text='@={"" + viewModel.profile.sshPort}'
-                            app:layout_constraintBottom_toBottomOf="@id/ssh_host"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintTop_toTopOf="@id/ssh_host" />
-
-                        <!--Username-->
+                            android:text="@={&quot;&quot; +  viewModel.profile.port}"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp"
+                            android:singleLine="true" />
+                        <CheckBox
+                            android:id="@+id/use_repeater"
+                            style="@style/FormField.CheckBox"
+                            android:checked="@={viewModel.useRepeater}"
+                            android:text="@string/title_use_repeater"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
                         <EditText
-                            android:id="@+id/ssh_username"
+                            android:id="@+id/id_on_repeater"
+                            style="@style/FormField.EditText"
+                            android:hint="@string/hint_server_id"
+                            android:importantForAutofill="no"
+                            android:inputType="number"
+                            android:minWidth="100dp"
+                            android:text="@={viewModel.idOnRepeater}"
+                            app:isVisible="@{viewModel.useRepeater}"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp"
+                            android:singleLine="true" />
+                        <TextView
+                            android:id="@+id/security_label"
+                            style="@style/FormField.LabelWithIcon"
+                            android:text="@string/title_vnc_security"
+                            app:drawableStartCompat="@drawable/ic_shield"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <com.gaurav.avnc.util.SpinnerEx
+                            android:id="@+id/security"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            app:value="@={viewModel.profile.securityType}"
+                            app:valueLabels="@{ @stringArray/profile_editor_security_labels }"
+                            app:values="@{ @stringArray/profile_editor_security_values }"
+                            tools:entries="@array/dummy_array" />
+                        <EditText
+                            android:id="@+id/username"
                             style="@style/FormField.EditText"
                             android:autofillHints="username"
                             android:drawableStart="@drawable/ic_person"
                             android:hint="@string/hint_username"
                             android:inputType="text"
-                            android:text="@={viewModel.profile.sshUsername}"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@id/ssh_host" />
-
-                        <!--Auth Type-->
-                        <RadioGroup
-                            android:id="@+id/ssh_auth_type"
-                            style="@style/FormField"
-                            android:orientation="horizontal"
-                            android:paddingTop="@dimen/padding_small"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@id/ssh_username">
-
-                            <RadioButton
-                                android:id="@+id/ssh_auth_type_key"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:checked="@={viewModel.sshUsePrivateKey}"
-                                android:text="@string/title_private_key" />
-
-                            <RadioButton
-                                android:id="@+id/ssh_auth_type_password"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:checked="@={viewModel.sshUsePassword}"
-                                android:text="@string/title_password" />
-                        </RadioGroup>
-
-                        <!--Password-->
-                        <EditText
-                            android:id="@+id/ssh_password"
-                            style="@style/FormField.EditText"
-                            android:autofillHints="password"
-                            android:drawableStart="@drawable/ic_password"
-                            android:hint="@string/hint_password"
-                            android:inputType="textPassword"
-                            android:text="@={viewModel.profile.sshPassword}"
-                            app:isVisible="@{viewModel.sshUsePassword}"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@id/ssh_auth_type" />
-
-                        <!--Private Key Import-->
-                        <Button
-                            android:id="@+id/key_import_btn"
-                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                            android:layout_width="wrap_content"
+                            android:text="@={viewModel.profile.username}"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp"
+                            android:singleLine="true" />
+                        <CheckBox
+                            android:id="@+id/use_ssh_tunnel"
+                            style="@style/FormField.CheckBox"
+                            android:checked="@={viewModel.useSshTunnel}"
+                            android:text="@string/title_use_ssh_tunnel"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <LinearLayout
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_margin="@dimen/margin_normal"
-                            android:text="@{viewModel.hasSshPrivateKey ? @string/title_change : @string/title_import}"
-                            app:icon="@drawable/ic_file"
-                            app:isVisible="@{viewModel.sshUsePrivateKey}"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@id/ssh_auth_type" />
-
-                    </androidx.constraintlayout.widget.ConstraintLayout>
-                </androidx.constraintlayout.widget.ConstraintLayout>
-            </ScrollView>
-
-            <com.google.android.material.bottomappbar.BottomAppBar
+                            android:animateLayoutChanges="true"
+                            app:isVisible="@{viewModel.useSshTunnel}"
+                            android:orientation="vertical">
+                            <EditText
+                                android:id="@+id/ssh_host"
+                                style="@style/FormField.EditText"
+                                android:drawableStart="@drawable/ic_computer"
+                                android:hint="@{@string/hint_ssh_host}"
+                                android:importantForAutofill="no"
+                                android:inputType="textUri"
+                                android:text="@={viewModel.profile.sshHost}"
+                                android:minHeight="48dp"
+                                android:layout_width="match_parent"
+                                android:singleLine="true" />
+                            <EditText
+                                android:id="@+id/ssh_port"
+                                style="@style/FormField.EditText"
+                                android:ems="3"
+                                android:hint="@{@string/hint_ssh_port}"
+                                android:importantForAutofill="no"
+                                android:inputType="number"
+                                android:text="@={&quot;&quot; + viewModel.profile.sshPort}"
+                                android:minHeight="48dp"
+                                android:layout_width="match_parent"
+                                android:singleLine="true" />
+                            <EditText
+                                android:id="@+id/ssh_username"
+                                style="@style/FormField.EditText"
+                                android:autofillHints="username"
+                                android:drawableStart="@drawable/ic_person"
+                                android:hint="@string/hint_username"
+                                android:inputType="text"
+                                android:text="@={viewModel.profile.sshUsername}"
+                                android:minHeight="48dp"
+                                android:layout_width="match_parent"
+                                android:singleLine="true" />
+                            <RadioGroup
+                                android:id="@+id/ssh_auth_type"
+                                style="@style/FormField"
+                                android:orientation="vertical"
+                                android:paddingTop="@dimen/padding_small"
+                                android:layout_width="match_parent">
+                                <RadioButton
+                                    android:id="@+id/ssh_auth_type_key"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:checked="@={viewModel.sshUsePrivateKey}"
+                                    android:text="@string/title_private_key"
+                                    android:minHeight="48dp" />
+                                <RadioButton
+                                    android:id="@+id/ssh_auth_type_password"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:checked="@={viewModel.sshUsePassword}"
+                                    android:text="@string/title_password"
+                                    android:minHeight="48dp" />
+                            </RadioGroup>
+                            <EditText
+                                android:id="@+id/ssh_password"
+                                style="@style/FormField.EditText"
+                                android:autofillHints="password"
+                                android:drawableStart="@drawable/ic_password"
+                                android:hint="@string/hint_password"
+                                android:inputType="textPassword"
+                                android:text="@={viewModel.profile.sshPassword}"
+                                app:isVisible="@{viewModel.sshUsePassword}"
+                                android:minHeight="48dp"
+                                android:layout_width="match_parent"
+                                android:singleLine="true" />
+                            <Button
+                                android:id="@+id/key_import_btn"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_margin="@dimen/margin_normal"
+                                android:text="@{viewModel.hasSshPrivateKey ? @string/title_change : @string/title_import}"
+                                app:icon="@drawable/ic_file"
+                                app:isVisible="@{viewModel.sshUsePrivateKey}"
+                                android:minHeight="48dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/picture_header"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/quick_editor_picture"
+                        android:textAllCaps="false" />
+                    <LinearLayout
+                        android:id="@+id/picture_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp"
+                        android:layout_marginBottom="12dp">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/streaming_btn"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/mac_quality"
+                            android:textAllCaps="false" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/displays_btn"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/mac_displays"
+                            android:textAllCaps="false" />
+                        <TextView
+                            android:id="@+id/displays_hint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/quick_editor_displays_hint"
+                            android:textSize="14sp"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="8dp" />
+                        <CheckBox
+                            android:id="@+id/resize_remote_desktop"
+                            style="@style/FormField.CheckBox"
+                            android:checked="@={viewModel.profile.resizeRemoteDesktop}"
+                            android:text="@string/title_resize_remote_desktop"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <TextView
+                            android:id="@+id/image_quality_label"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="48dp"
+                            android:labelFor="@id/image_quality"
+                            android:text="@string/title_image_quality"
+                            android:minHeight="48dp" />
+                        <SeekBar
+                            android:id="@+id/image_quality"
+                            android:layout_width="match_parent"
+                            android:layout_height="@dimen/action_btn_size"
+                            android:layout_marginVertical="@dimen/margin_small"
+                            android:layout_marginStart="@dimen/margin_large"
+                            android:max="9"
+                            android:minHeight="48dp"
+                            android:progress="@={viewModel.profile.imageQuality}" />
+                        <CheckBox
+                            android:id="@+id/raw_encoding"
+                            android:layout_width="match_parent"
+                            android:layout_height="@dimen/action_btn_size"
+                            android:layout_marginEnd="@dimen/margin_small"
+                            android:checked="@={viewModel.useRawEncoding}"
+                            android:text="@string/title_image_quality_raw"
+                            android:minHeight="48dp" />
+                        <TextView
+                            android:id="@+id/screen_orientation_label"
+                            style="@style/FormField.LabelWithIcon"
+                            android:labelFor="@id/screen_orientation"
+                            android:text="@string/title_orientation"
+                            app:drawableStartCompat="@drawable/ic_screen_rotation"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <com.gaurav.avnc.util.SpinnerEx
+                            android:id="@+id/screen_orientation"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            app:value="@={viewModel.profile.screenOrientation}"
+                            app:valueLabels="@{ @stringArray/orientation_entries }"
+                            app:values="@{ @stringArray/orientation_values }"
+                            tools:entries="@array/dummy_array" />
+                    </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/input_header"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/quick_editor_input"
+                        android:textAllCaps="false" />
+                    <LinearLayout
+                        android:id="@+id/input_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp"
+                        android:layout_marginBottom="12dp">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/remote_input_settings"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginHorizontal="16dp"
+                            android:minHeight="48dp"
+                            android:text="@string/remote_input_title" />
+                        <TextView
+                            android:id="@+id/gesture_style_label"
+                            style="@style/FormField.LabelWithIcon"
+                            android:labelFor="@id/gesture_style"
+                            android:text="@string/pref_gesture_style"
+                            app:drawableStartCompat="@drawable/ic_gesture"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <com.gaurav.avnc.util.SpinnerEx
+                            android:id="@+id/gesture_style"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            app:value="@={viewModel.profile.gestureStyle}"
+                            app:valueDescriptions="@{ @stringArray/profile_editor_gesture_style_descriptions }"
+                            app:valueLabels="@{ @stringArray/profile_editor_gesture_style_labels }"
+                            app:values="@{ @stringArray/profile_editor_gesture_style_values }"
+                            tools:entries="@array/dummy_array" />
+                        <CheckBox
+                            android:id="@+id/button_up_delay"
+                            style="@style/FormField.CheckBox"
+                            android:checked="@={viewModel.profile.fButtonUpDelay}"
+                            android:text="@string/title_button_up_delay"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <ImageButton
+                            android:id="@+id/button_up_delay_help_btn"
+                            style="@style/ImageButton"
+                            android:contentDescription="@string/desc_help_btn"
+                            android:src="@drawable/ic_help"
+                            app:tint="?colorControlNormal"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                    </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/other_header"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/quick_editor_other"
+                        android:textAllCaps="false" />
+                    <LinearLayout
+                        android:id="@+id/other_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp"
+                        android:layout_marginBottom="12dp">
+                        <CheckBox
+                            android:id="@+id/read_only"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/control_readonly"
+                            android:checked="@={viewModel.readOnly}" />
+                        <CheckBox
+                            android:id="@+id/auto_connect"
+                            style="@style/FormField.CheckBox"
+                            android:checked="@={viewModel.profile.fConnectOnAppStart}"
+                            android:text="@string/title_connect_on_app_start"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <CheckBox
+                            android:id="@+id/wol"
+                            style="@style/FormField.CheckBox"
+                            android:checked="@={viewModel.enableWol}"
+                            android:text="@string/title_enable_wol"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <ImageButton
+                            android:id="@+id/wol_help_btn"
+                            style="@style/ImageButton"
+                            android:contentDescription="@string/desc_help_btn"
+                            android:src="@drawable/ic_help"
+                            app:tint="?colorControlNormal"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp" />
+                        <EditText
+                            android:id="@+id/wol_mac"
+                            style="@style/FormField.EditText"
+                            android:drawableStart="@drawable/ic_wake_on_lan"
+                            android:hint="@string/hint_wol_mac"
+                            android:importantForAutofill="no"
+                            android:inputType="text"
+                            android:text="@={viewModel.profile.wolMAC}"
+                            app:isVisible="@{viewModel.enableWol}"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp"
+                            android:singleLine="true" />
+                        <EditText
+                            android:id="@+id/wol_broadcast_address"
+                            style="@style/FormField.EditText"
+                            android:drawableStart="@drawable/ic_broadcast"
+                            android:hint="@string/hint_wol_address"
+                            android:importantForAutofill="no"
+                            android:inputType="text"
+                            android:text="@={viewModel.profile.wolBroadcastAddress}"
+                            app:isVisible="@{viewModel.enableWol}"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp"
+                            android:singleLine="true" />
+                        <EditText
+                            android:id="@+id/wol_port"
+                            style="@style/FormField.EditText"
+                            android:layout_marginStart="0dp"
+                            android:ems="3"
+                            android:hint="@string/hint_port"
+                            android:importantForAutofill="no"
+                            android:inputType="number"
+                            android:text="@={&quot;&quot; +  viewModel.profile.wolPort}"
+                            app:isVisible="@{viewModel.enableWol}"
+                            android:layout_width="match_parent"
+                            android:minHeight="48dp"
+                            android:singleLine="true" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/try_btn"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/quick_editor_test"
+                            android:textAllCaps="false" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+        <LinearLayout
+            android:id="@+id/editor_footer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="8dp"
+            android:layout_marginBottom="0dp"
+            android:paddingHorizontal="16dp">
+            <ProgressBar
+                android:id="@+id/saving_progress"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center_horizontal"
+                android:visibility="gone"
+                android:contentDescription="@string/quick_editor_saving" />
+            <TextView
+                android:id="@+id/save_error"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:contentInsetEnd="15dp"
-                app:contentInsetStart="15dp"
-                app:elevation="@dimen/editor_bottom_bar_elevation"
-                tools:ignore="BottomAppBar">
-
-                <Button
-                    android:id="@+id/cancel_btn"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/title_cancel" />
-
-                <Button
-                    android:id="@+id/try_btn"
-                    style="@style/Widget.MaterialComponents.Button.TextButton.Dialog"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center_horizontal"
-                    android:text="@string/title_try"
-                    app:icon="@drawable/ic_launch"
-                    app:iconGravity="end" />
-
-                <Button
-                    android:id="@+id/save_btn"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:text="@string/title_save" />
-            </com.google.android.material.bottomappbar.BottomAppBar>
+                android:text="@string/quick_editor_save_failed"
+                android:textSize="14sp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="8dp"
+                android:visibility="gone"
+                android:accessibilityLiveRegion="polite" />
+            <LinearLayout
+                android:id="@+id/editor_actions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/save_connect_btn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/quick_editor_save_connect"
+                android:textAllCaps="false" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/save_btn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/quick_editor_save_only"
+                android:textAllCaps="false" />
+            </LinearLayout>
         </LinearLayout>
-    </com.gaurav.avnc.util.EdgeToEdgeWrapperLayout>
+    </LinearLayout>
 </layout>

@@ -50,7 +50,7 @@
     <string name="msg_about_app">Um cliente VNC rápido e seguro. Permite visualizar e controlar remotamente qualquer dispositivo que executa um servidor VNC.
 \n
 \n
-\nO AVNC é de código aberto e sob licença copyleft — feito com a ajuda de muitos colaboradores.</string>
+\nO FastVNC é de código aberto e sob licença copyleft — feito com a ajuda de muitos colaboradores.</string>
     <string name="msg_server_profile_added">Servidor adicionado</string>
     <string name="msg_server_profile_deleted">Servidor excluído</string>
     <string name="msg_pip_not_supported">Não suportado neste dispositivo</string>
@@ -221,7 +221,7 @@
     <string name="hint_wol_mac">Endereço MAC</string>
     <string name="msg_wake_on_lan_help">Wake-on-LAN pode ser usado para ligar remotamente um computador.
 \n
-\nPrimeiro, configure o WoL no computador remoto e, em seguida, ative-o no AVNC.
+\nPrimeiro, configure o WoL no computador remoto e, em seguida, ative-o no FastVNC.
 \nUma vez ativado, o pacote mágico WoL será enviado automaticamente antes da conexão com esse servidor.</string>
     <string name="msg_saved">Salvo</string>
     <string name="msg_tap_to_select_a_key">Toque para selecionar uma tecla:</string>

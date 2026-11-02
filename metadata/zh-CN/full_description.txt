@@ -1,4 +1,4 @@
-AVNC 是一个适用于 Android 的开源 VNC 客户端。它允许远程控制运行 VNC 服务器的任何设备。
+FastVNC 是一个适用于 Android 的开源 VNC 客户端。它允许远程控制运行 VNC 服务器的任何设备。
 
 特征：
 

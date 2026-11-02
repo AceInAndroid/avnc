@@ -46,6 +46,8 @@ import com.gaurav.avnc.util.showKeyboard
 import com.gaurav.avnc.util.hideKeyboard
 import com.gaurav.avnc.model.ServerProfile
 import com.gaurav.avnc.viewmodel.VncViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.parcelize.Parcelize
@@ -75,13 +77,19 @@ class VncActivity : AppCompatActivity() {
     private val inputHandler = InputHandler()
     val virtualKeys by lazy { VirtualKeys(this, inputHandler) }
     val computerKeyboard by lazy { ComputerKeyboard(this, inputHandler) }
+    val inputPanels by lazy { ViewerInputPanels(this) }
+    internal val selectedInputTab: InputTab? get() = if (computerKeyboard.isVisible) InputTab.Keyboard else inputPanels.selectedTab
     val floatingTouchpad by lazy { FloatingTouchpad(this, inputHandler) }
     private var restoreVirtualKeys = false
     private var restoreComputerKeyboard = false
+    private var restoreInputTab: InputTab? = null
     private val keyboardBack = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() = hideComputerKeyboard()
+        override fun handleOnBackPressed() = hideInputPanels()
     }
     val toolbar by lazy { Toolbar(this) }
+    val clipboardControls by lazy { ClipboardControls(this) }
+    // Activity-result launchers must be registered before the Activity starts.
+    val fileTransferControls = FileTransferControls(this)
     private val serverUnlockPrompt = DeviceAuthPrompt(this)
     private val layoutManager by lazy { LayoutManager(this) }
     private var oldState: SavedState? = null
@@ -90,6 +98,11 @@ class VncActivity : AppCompatActivity() {
     private var wasConnectedWhenActivityStopped = false
     private var wasKeyboardVisibleWhenActivityStopped = false
     private var onStartTime = 0L
+    private lateinit var connectionEntry: ConnectionEntry
+    private var reconnectJob: Job? = null
+    private var autoRetryCancelled = false
+    private var retryDeadline: Long? = null
+    private var currentRetryDelay: Int? = null
 
     /**********************************************************************************************
      * Activity Lifecycle
@@ -99,6 +112,12 @@ class VncActivity : AppCompatActivity() {
         DeviceAuthPrompt.applyFingerprintDialogFix(supportFragmentManager)
 
         super.onCreate(savedInstanceState)
+        hasActivityRestarted = savedInstanceState != null
+        oldState = (savedInstanceState ?: intent.extras)?.let {
+            BundleCompat.getParcelable(it, SAVED_STATE_KEY, SavedState::class.java)
+        }
+        retryDeadline = savedInstanceState?.takeIf { it.containsKey("retry_deadline") }?.getLong("retry_deadline")
+        currentRetryDelay = savedInstanceState?.takeIf { it.containsKey("retry_delay") }?.getInt("retry_delay")
         startup(savedInstanceState)
 
         //Main UI
@@ -113,8 +132,10 @@ class VncActivity : AppCompatActivity() {
         setupInputControls(savedInstanceState)
         setupNoVideoOverlay()
 
+        autoRetryCancelled = savedInstanceState?.getBoolean("auto_retry_cancelled") ?: false
+        connectionEntry = ConnectionEntry(this, { reconnect() }, ::stopAutoReconnect)
+
         //Observers
-        binding.reconnectBtn.setOnClickListener { reconnect() }
         viewModel.loginInfoRequest.observe(this) { showLoginDialog() }
         viewModel.confirmationRequest.observe(this) { showConfirmationDialog() }
         viewModel.state.observe(this) { onClientStateChanged(it) }
@@ -122,10 +143,6 @@ class VncActivity : AppCompatActivity() {
         viewModel.capturePointer.observe(this) { updatePointerCapture(it) }
         viewModel.viewportWillChange.observe(this) { releaseInputControls() }
 
-        hasActivityRestarted = savedInstanceState != null
-        oldState = (savedInstanceState ?: intent.extras)?.let {
-            BundleCompat.getParcelable(it, SAVED_STATE_KEY, SavedState::class.java)
-        }
     }
 
     override fun onStart() {
@@ -137,7 +154,7 @@ class VncActivity : AppCompatActivity() {
             releaseInputControls()
             viewModel.refreshRemoteInputConfig()
             inputHandler.onRemoteConfigChanged()
-            if (old != viewModel.remoteInputConfig) computerKeyboard.onRemoteInputChanged()
+            if (old != viewModel.remoteInputConfig) { computerKeyboard.onRemoteInputChanged(); inputPanels.refresh() }
         }
 
         // Refresh framebuffer on activity restart:
@@ -149,6 +166,21 @@ class VncActivity : AppCompatActivity() {
             viewModel.setFrameBufferUpdatesPaused(false)
         else if (wasConnectedWhenActivityStopped)
             viewModel.refreshFrameBuffer()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        clipboardControls.onResume()
+    }
+
+    override fun onPause() {
+        clipboardControls.onPause()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        clipboardControls.close()
+        super.onDestroy()
     }
 
     override fun onStop() {
@@ -164,8 +196,8 @@ class VncActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         viewModel.hasWindowFocus.value = hasFocus
+        if (::binding.isInitialized) clipboardControls.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            viewModel.sendClipboardText()
             restoreKeyboard()
         } else if (::binding.isInitialized) {
             releaseInputControls()
@@ -174,8 +206,12 @@ class VncActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putParcelable(SAVED_STATE_KEY, prepareSavedState())
+        outState.putParcelable(SAVED_STATE_KEY, prepareSavedState(currentRetryDelay ?: oldState?.reconnectDelay))
+        retryDeadline?.let { outState.putLong("retry_deadline", it) }
+        currentRetryDelay?.let { outState.putInt("retry_delay", it) }
         outState.putBoolean("computer_keyboard_visible", computerKeyboard.isVisible)
+        outState.putBoolean("auto_retry_cancelled", autoRetryCancelled)
+        outState.putString("selected_input_tab", selectedInputTab?.name)
         viewModel.profileLive.value?.let { outState.putProfile(it) }
     }
 
@@ -227,9 +263,10 @@ class VncActivity : AppCompatActivity() {
 
             if (isUnlockNeeded) {
                 serverUnlockPrompt.init(
-                        onSuccess = { startSession(startupArg) },
-                        onFail = { handleStartupFailure(Exception(it)) })
+                        onSuccess = { viewModel.awaitingUser.value = false; startSession(startupArg) },
+                        onFail = { viewModel.awaitingUser.value = false; finish() })
 
+                viewModel.awaitingUser.value = true
                 if (!serverUnlockPrompt.hasLaunched())
                     serverUnlockPrompt.launch(getString(R.string.title_unlock_dialog))
             } else {
@@ -245,6 +282,7 @@ class VncActivity : AppCompatActivity() {
             runCatching {
                 startSession(startupArg, viewModel)
             }.onFailure {
+                if (it is CancellationException) throw it
                 handleStartupFailure(it)
             }
         }
@@ -285,24 +323,39 @@ class VncActivity : AppCompatActivity() {
 
     private var autoReconnecting = false
     private fun autoReconnect() {
-        if (autoReconnecting)
-            return
-
-        val reconnectDelay = calculateAutoReconnectDelay() ?: return
+        if (autoReconnecting || autoRetryCancelled || isFinishing) return
+        val reconnectDelay = currentRetryDelay ?: calculateAutoReconnectDelay() ?: return
         autoReconnecting = true
-        lifecycleScope.launch {
+        currentRetryDelay = reconnectDelay
+        val latestDeadline = SystemClock.elapsedRealtime() + reconnectDelay * 1000L
+        val expiresAt = retryDeadline?.coerceAtMost(latestDeadline) ?: latestDeadline
+        retryDeadline = expiresAt
+        reconnectJob = lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                // Show progress bar
-                // Progress intentionally reaches 100% 1 step earlier to allow the animation to complete
-                repeat(reconnectDelay) {
-                    val progress = if (reconnectDelay <= 1) 100 else (100 * it) / (reconnectDelay - 1)
+                while (!autoRetryCancelled && !isFinishing) {
+                    val millis = (expiresAt - SystemClock.elapsedRealtime()).coerceAtLeast(0)
+                    val remaining = ((millis + 999) / 1000).toInt()
+                    connectionEntry.setCountdown(remaining)
+                    val progress = if (reconnectDelay <= 1) 100 else
+                        (100 - millis * 100 / ((reconnectDelay - 1) * 1000L)).toInt().coerceIn(0, 100)
                     binding.autoReconnectProgress.setProgressCompat(progress, true)
-                    delay(1.seconds)
+                    if (remaining == 0) {
+                        reconnect(prepareSavedState(reconnectDelay))
+                        break
+                    }
+                    delay(minOf(millis, 250L))
                 }
-
-                reconnect(prepareSavedState(reconnectDelay))
             }
         }
+    }
+
+    private fun stopAutoReconnect() {
+        autoRetryCancelled = true
+        autoReconnecting = false
+        reconnectJob?.cancel()
+        reconnectJob = null
+        retryDeadline = null
+        if (this::connectionEntry.isInitialized) connectionEntry.setCountdown(null)
     }
 
     private fun calculateAutoReconnectDelay(): Int? {
@@ -342,6 +395,7 @@ class VncActivity : AppCompatActivity() {
         //todo: Cleanup these too
         layoutManager.onConnectionStateChanged()
         toolbar.onStateChange(isConnected)
+        clipboardControls.onStateChanged()
         updateStatusContainerVisibility(isConnected)
 
         when (newState) {
@@ -358,12 +412,13 @@ class VncActivity : AppCompatActivity() {
         binding.frameView.keepScreenOn = viewModel.pref.viewer.keepScreenOn
         inputHandler.onSessionConnected(this)
         virtualKeys.onConnected()
-        if (computerKeyboard.isVisible) virtualKeys.hide()
+        if (selectedInputTab != null) virtualKeys.hide()
         floatingTouchpad.onConnected()
         if (restoreComputerKeyboard) {
             restoreComputerKeyboard = false
             showKeyboard()
         }
+        restoreInputTab?.let { restoreInputTab = null; selectInputTab(it) }
         SamsungDex.setMetaKeyCapture(this, true)
 
         showViewerHelp()
@@ -376,6 +431,7 @@ class VncActivity : AppCompatActivity() {
     private fun onSessionDisconnected() {
         binding.frameView.isVisible = false
         binding.frameView.keepScreenOn = false
+        hideInputPanels()
         computerKeyboard.onDisconnected()
         floatingTouchpad.onDisconnected()
         virtualKeys.releaseMetaKeys()
@@ -460,16 +516,19 @@ class VncActivity : AppCompatActivity() {
     }
 
     private fun showLoginDialog() {
-        LoginFragment().show(supportFragmentManager, "LoginDialog")
+        if (supportFragmentManager.findFragmentByTag("LoginDialog") == null)
+            LoginFragment().show(supportFragmentManager, "LoginDialog")
     }
 
     private fun showConfirmationDialog() {
-        ConfirmationDialog().show(supportFragmentManager, "ConfirmationDialog")
+        if (supportFragmentManager.findFragmentByTag("ConfirmationDialog") == null)
+            ConfirmationDialog().show(supportFragmentManager, "ConfirmationDialog")
     }
 
     fun showKeyboard() {
         if (!viewModel.connected || viewModel.inPiPMode.value == true ||
             viewModel.activeViewMode.value == ServerProfile.VIEW_MODE_NO_INPUT) return
+        inputPanels.hide()
         if (viewModel.pref.input.useSystemKeyboard) {
             hideComputerKeyboard()
             binding.inputView.requestFocus()
@@ -486,15 +545,54 @@ class VncActivity : AppCompatActivity() {
                 computerKeyboard.show()
             }
         }
+        keyboardBack.isEnabled = selectedInputTab != null
+        updateControlLayout()
+        toolbar.refresh()
     }
 
     fun hideComputerKeyboard() = computerKeyboard.hide()
 
+    internal fun selectInputTab(tab: InputTab) {
+        if (!viewModel.connected || viewModel.inPiPMode.value == true ||
+            viewModel.activeViewMode.value == ServerProfile.VIEW_MODE_NO_INPUT) return
+        toolbar.close()
+        if (selectedInputTab == tab) return
+        releaseInputControls()
+        if (tab == InputTab.Keyboard) showKeyboard() else {
+            computerKeyboard.hide()
+            hideKeyboard(binding.inputView)
+            virtualKeys.hide()
+            inputPanels.show(tab)
+        }
+        keyboardBack.isEnabled = selectedInputTab != null
+        updateControlLayout()
+        toolbar.refresh()
+    }
+
+    fun hideInputPanels() {
+        releaseInputControls()
+        inputPanels.hide()
+        computerKeyboard.hide()
+        keyboardBack.isEnabled = false
+        updateControlLayout()
+        toolbar.refresh()
+    }
+
+    fun disconnectSession() {
+        stopAutoReconnect()
+        releaseInputControls()
+        fileTransferControls.cancel()
+        hideInputPanels()
+        finish()
+    }
+
     private fun setupInputControls(savedState: Bundle?) {
         binding.keyboardContentHost.addView(computerKeyboard.container,
                 android.widget.FrameLayout.LayoutParams(-1, -2))
+        binding.keyboardContentHost.addView(inputPanels.container,
+                android.widget.FrameLayout.LayoutParams(-1, -2))
         computerKeyboard.onVisibilityChanged = { visible ->
-            keyboardBack.isEnabled = visible
+            keyboardBack.isEnabled = visible || inputPanels.isVisible
             updateControlLayout()
             toolbar.refresh()
             if (!visible) {
@@ -514,23 +612,31 @@ class VncActivity : AppCompatActivity() {
                 releaseInputControls()
         }
         viewModel.inPiPMode.observe(this) { inPiP ->
-            if (inPiP) { releaseInputControls(); hideComputerKeyboard() }
+            clipboardControls.onPiPChanged()
+            if (inPiP) { hideInputPanels() }
             floatingTouchpad.setSuppressed(inPiP || viewModel.activeViewMode.value == ServerProfile.VIEW_MODE_NO_INPUT)
         }
         viewModel.activeViewMode.observe(this) { mode ->
-            if (mode == ServerProfile.VIEW_MODE_NO_INPUT) { releaseInputControls(); hideComputerKeyboard() }
+            clipboardControls.onStateChanged()
+            if (mode == ServerProfile.VIEW_MODE_NO_INPUT) { hideInputPanels() }
             floatingTouchpad.setSuppressed(mode == ServerProfile.VIEW_MODE_NO_INPUT || viewModel.inPiPMode.value == true)
         }
         restoreComputerKeyboard = savedState?.getBoolean("computer_keyboard_visible") == true
+        restoreInputTab = savedState?.getString("selected_input_tab")?.let { name -> InputTab.entries.find { it.name == name && it != InputTab.Keyboard } }
     }
 
     internal fun updateControlLayout() {
         val availableWidth = binding.viewerRoot.width - binding.viewerRoot.paddingLeft - binding.viewerRoot.paddingRight
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val dock = computerKeyboard.isVisible && landscape && availableWidth >= ControlStyle(this).dp(800) && floatingTouchpad.isExpanded
+        val padWidth = floatingTouchpad.preferredWidthPx
+        val minimumDockWidth = maxOf(ControlStyle(this).dp(800), padWidth + ControlStyle(this).dp(580))
+        val dock = !floatingTouchpad.isTabbed && computerKeyboard.isVisible && landscape && availableWidth >= minimumDockWidth && floatingTouchpad.isExpanded
+        if (binding.touchpadDock.layoutParams.width != padWidth)
+            binding.touchpadDock.layoutParams = binding.touchpadDock.layoutParams.apply { width = padWidth }
         binding.touchpadDock.isVisible = dock
         floatingTouchpad.setDocked(dock)
-        binding.keyboardHost.isVisible = computerKeyboard.isVisible
+        binding.keyboardHost.isVisible = computerKeyboard.isVisible || inputPanels.isVisible
+        inputPanels.updateHeight()
         computerKeyboard.updateWidth()
         floatingTouchpad.reposition()
     }
@@ -549,6 +655,8 @@ class VncActivity : AppCompatActivity() {
         viewModel.saveProfile()
         inputHandler.onRemoteConfigChanged()
         computerKeyboard.onRemoteInputChanged()
+        inputPanels.refresh()
+        toolbar.refresh()
     }
 
     fun selectDisplay(id: String) {
@@ -589,11 +697,15 @@ class VncActivity : AppCompatActivity() {
     }
 
     private fun updateStatusContainerVisibility(isConnected: Boolean) {
-        binding.statusContainer.isVisible = true
-        binding.statusContainer
-                .animate()
-                .alpha(if (isConnected) 0f else 1f)
-                .withEndAction { binding.statusContainer.isVisible = !isConnected }
+        val status = binding.statusContainer
+        status.animate().cancel()
+        // Session state must release the overlay even if an entrance animation is interrupted.
+        status.isVisible = !isConnected
+        status.alpha = 1f
+        if (!isConnected && (android.os.Build.VERSION.SDK_INT < 26 || android.animation.ValueAnimator.areAnimatorsEnabled())) {
+            status.alpha = 0f
+            status.animate().alpha(1f).setDuration(180).start()
+        }
     }
 
     /************************************************************************************
@@ -628,7 +740,7 @@ class VncActivity : AppCompatActivity() {
 
         if (canEnter && Build.VERSION.SDK_INT >= 26) {
             releaseInputControls()
-            hideComputerKeyboard()
+            hideInputPanels()
 
             var w = viewModel.frameState.fbWidth
             var h = viewModel.frameState.fbHeight
@@ -655,13 +767,13 @@ class VncActivity : AppCompatActivity() {
      ************************************************************************************/
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && computerKeyboard.isVisible && !event.isFromSource(InputDevice.SOURCE_MOUSE))
+        if (keyCode == KeyEvent.KEYCODE_BACK && selectedInputTab != null && !event.isFromSource(InputDevice.SOURCE_MOUSE))
             return super.onKeyDown(keyCode, event)
         return inputHandler.onKeyEvent(event) || super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && computerKeyboard.isVisible && !event.isFromSource(InputDevice.SOURCE_MOUSE))
+        if (keyCode == KeyEvent.KEYCODE_BACK && selectedInputTab != null && !event.isFromSource(InputDevice.SOURCE_MOUSE))
             return super.onKeyUp(keyCode, event)
         return inputHandler.onKeyEvent(event) || super.onKeyUp(keyCode, event)
     }

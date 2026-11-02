@@ -42,7 +42,7 @@
     <SwitchPreference
         app:defaultValue="false"
         app:key="pause_fb_updates_in_background"
-        app:title="Pause updates when in background (experimental)" />
+        app:title="@string/settings_pause_background" />
 
     <PreferenceCategory
         app:icon="@drawable/ic_zoom_in"

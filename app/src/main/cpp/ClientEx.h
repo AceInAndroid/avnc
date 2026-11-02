@@ -33,6 +33,12 @@ struct ClientEx {
     // Reference to managed `VncClient`
     jobject managedClient;
 
+    // Only cancellation crosses the I/O thread boundary. The owner performs
+    // socket cleanup after I/O has stopped; cancellation never closes a fd.
+    int cancelled;
+    bool isCancelled() const { return __atomic_load_n(&cancelled, __ATOMIC_ACQUIRE) != 0; }
+    void cancel() { __atomic_store_n(&cancelled, 1, __ATOMIC_RELEASE); }
+
     // Although frame width & height are maintained in rfbClient, those values
     // are modified before our MallocFrameBuffer callback is triggered, and
     // we cannot protect them with a mutex. So we maintain the framebuffer

@@ -37,17 +37,21 @@ static char *getNativeStrCopy(JNIEnv *env, jstring jStr) {
 const char *LOG_TAG = "NativeVnc";
 
 void log_info(const char *fmt, ...) {
+    const int savedErrno = errno;
     va_list args;
     va_start(args, fmt);
     __android_log_vprint(ANDROID_LOG_INFO, LOG_TAG, fmt, args);
     va_end(args);
+    errno = savedErrno;
 }
 
 void log_error(const char *fmt, ...) {
+    const int savedErrno = errno;
     va_list args;
     va_start(args, fmt);
     __android_log_vprint(ANDROID_LOG_ERROR, LOG_TAG, fmt, args);
     va_end(args);
+    errno = savedErrno;
 }
 
 /**
@@ -79,6 +83,9 @@ static const char *errnoToStr(int e) {
         case ECONNABORTED:
             return "Connection aborted";
 
+        case ECANCELED:
+            return "Connection cancelled";
+
         case ECONNRESET:
             return "Connection closed abruptly by remote host";
 
@@ -92,7 +99,7 @@ static const char *errnoToStr(int e) {
             // In this case we don't want to display errno description to user
             // because it is more likely to be misleading (e.g. EINTR, EAGAIN).
             // BUT add it to logs in case LibVNC didn't.
-            log_error("errnoToStr: (%d %s)", errno, strerror(errno));
+            log_error("errnoToStr: (%d %s)", e, strerror(e));
             return "";
     }
 }

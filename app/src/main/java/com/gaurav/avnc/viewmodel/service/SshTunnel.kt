@@ -9,8 +9,10 @@
 package com.gaurav.avnc.viewmodel.service
 
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.system.ErrnoException
 import android.system.OsConstants
+import android.system.Os
 import android.util.Base64
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -20,7 +22,9 @@ import com.gaurav.avnc.model.ServerProfile
 import com.trilead.ssh2.Connection
 import com.trilead.ssh2.KnownHosts
 import com.trilead.ssh2.LocalPortForwarder
+import com.trilead.ssh2.ProxyData
 import com.trilead.ssh2.ServerHostKeyVerifier
+import com.trilead.ssh2.SFTPv3Client
 import com.trilead.ssh2.crypto.OpenSSHKeyEncoder
 import com.trilead.ssh2.crypto.PEMDecoder
 import com.trilead.ssh2.crypto.PEMStructure
@@ -33,10 +37,12 @@ import java.io.File
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.NoRouteToHostException
 import java.net.ServerSocket
+import java.net.Socket
 import java.security.KeyPair
 import java.security.MessageDigest
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Implements Host Key verification.
@@ -44,9 +50,12 @@ import java.security.MessageDigest
  * Known hosts & keys are stored in a file inside app's private storage.
  * For unknown host, user is prompted to confirm the key.
  */
-class HostKeyVerifier(private val observer: SshClient.Observer) : ServerHostKeyVerifier {
+class HostKeyVerifier(private val observer: SshClient.Observer,
+                      private val checkActive: () -> Unit = {},
+                      private val awaitConfirmation: (() -> Boolean) -> Boolean = { it() }) : ServerHostKeyVerifier {
 
     override fun verifyServerHostKey(hostname: String, port: Int, keyAlgorithm: String, key: ByteArray): Boolean {
+        checkActive()
         val knownHostsFile = observer.getKnownSshHostsFile()
         val knownHosts = KnownHosts(knownHostsFile)
         val verificationResult = knownHosts.verifyHostkey(hostname, keyAlgorithm, key)
@@ -71,7 +80,9 @@ class HostKeyVerifier(private val observer: SshClient.Observer) : ServerHostKeyV
                  |If you continue, this key will be added to trusted list.
                  """.trimMargin()
 
-        if (observer.confirmSshHostKeyWithUser(message, isNew)) {
+        val confirmed = awaitConfirmation { observer.confirmSshHostKeyWithUser(message, isNew) }
+        checkActive()
+        if (confirmed) {
             //User has confirmed the key, so remember it.
             KnownHosts.addHostkeyToFile(knownHostsFile, arrayOf(hostname), keyAlgorithm, key)
             return true
@@ -147,51 +158,236 @@ class SshClient(private val observer: Observer) {
         fun getSshKeyPassword(): String
     }
 
+    private val stateLock = Any()
+    @Volatile private var cancelled = false
+    private var started = false
     private var connection: Connection? = null
+    private var transportSocket: Socket? = null
     private val localHost = "127.0.0.1"
 
-    /**
-     * Opens the tunnel according to [profile]
-     */
+    /** Opens an ordinary VNC tunnel with bounded TCP and SSH key-exchange handshakes. */
     fun openTunnel(profile: ServerProfile): TunnelGate {
-        check(connection == null) { "Connection already open" }
-
-        connection = connect(profile)
-        authenticate(connection!!, profile)
-        return createPortForwarder(connection!!, profile)
+        beginConnection()
+        try {
+            val connected = connect(profile)
+            authenticate(connected, profile)
+            checkActive()
+            return createPortForwarder(connected, profile)
+        } catch (error: Throwable) {
+            close()
+            throw error
+        }
     }
 
-    fun close() {
-        connection?.close()
-        connection = null
+    /** Independent SFTP connection; never shares or interrupts the viewer's live tunnel. */
+    fun openFileTransfer(profile: ServerProfile): SFTPv3Client {
+        beginConnection()
+        try {
+            val connected = connect(profile)
+            authenticate(connected, profile)
+            checkActive()
+            val client = withTransportDeadline("SFTP initialization") { SFTPv3Client(connected) }
+            try {
+                checkActive()
+                return client
+            } catch (error: Throwable) {
+                client.close()
+                throw error
+            }
+        } catch (error: Throwable) {
+            close()
+            throw error
+        }
     }
-
 
     /**
-     * It is possible for a host to have multiple IP addresses.
-     * If connection failed due to [NoRouteToHostException], we try the next address (if available).
+     * Safe on the UI thread, even while SSHLib holds Connection's monitor in connect/auth.
+     * Cancellation is sticky: a cancelled client cannot begin or retry a connection later.
+     * Never invoke Connection.close() here; closing our raw socket interrupts its blocking I/O.
+     */
+    fun cancel() {
+        val socket = synchronized(stateLock) {
+            cancelled = true
+            transportSocket
+        }
+        runCatching { socket?.close() }
+    }
+
+    /** Worker-side cleanup. Call [cancel] instead when stopping from the UI thread. */
+    fun close() {
+        cancel()
+        val connected = synchronized(stateLock) {
+            connection.also { connection = null }
+        }
+        connected?.close()
+        synchronized(stateLock) { transportSocket = null }
+    }
+
+    private fun beginConnection() {
+        synchronized(stateLock) {
+            checkActive()
+            check(!started) { "Connection already started" }
+            started = true
+        }
+    }
+
+    private fun checkActive() {
+        if (cancelled) throw SshTunnelException("SSH connection cancelled")
+    }
+
+    /**
+     * Own the TCP socket through SSHLib's public ProxyData hook. The short state lock only
+     * publishes ownership; DNS, connect, SSH handshakes, socket close and library cleanup
+     * all happen outside it. Retry other addresses only before TCP is established: host-key
+     * rejection, authentication failure and SSH protocol errors must never trigger retries.
      */
     private fun connect(profile: ServerProfile): Connection {
-        for (address in InetAddress.getAllByName(profile.sshHost)) {
+        checkActive()
+        val addresses = InetAddress.getAllByName(profile.sshHost)
+        var lastTransportFailure: IOException? = null
+        for (address in addresses) {
+            checkActive()
+            val candidate = Connection(address.hostAddress, profile.sshPort)
+            var socket: Socket? = null
+            var tcpConnected = false
             try {
-                return Connection(address.hostAddress, profile.sshPort).apply {
-                    removeUnsupportedCiphers(this)
-                    connect(HostKeyVerifier(observer))
+                removeUnsupportedCiphers(candidate)
+                candidate.setProxyData(ProxyData { _, port, timeout ->
+                    openSocket(address, port, timeout).also {
+                        socket = it
+                        tcpConnected = true
+                    }
+                })
+                withTransportDeadline("key exchange", CONNECTION_TIMEOUT_MS) { awaitConfirmation ->
+                    // SSHLib's own KEX timer includes the human host-trust callback. Own
+                    // the deadline instead, so time spent reading that prompt is excluded.
+                    candidate.connect(HostKeyVerifier(observer, ::checkActive, awaitConfirmation),
+                            CONNECTION_TIMEOUT_MS, 0)
                 }
-            } catch (e: IOException) {
-                if (e.cause is NoRouteToHostException) continue
-                else throw unwrapLibraryException(e)
+                synchronized(stateLock) {
+                    checkActive()
+                    connection = candidate
+                }
+                return candidate
+            } catch (error: Throwable) {
+                socket?.let { discardSocket(it) }
+                candidate.close() // Only the connection worker touches SSHLib's monitor.
+                checkActive()
+                if (error !is IOException || tcpConnected) throw unwrapLibraryException(error)
+                lastTransportFailure = error
             }
         }
-        // We will reach here only if every address throws NoRouteToHostException
-        throw SshTunnelException("Unreachable SSH host: ${profile.sshHost}")
+        throw lastTransportFailure?.let { unwrapLibraryException(it) }
+                ?: SshTunnelException("Unreachable SSH host: ${profile.sshHost}")
+    }
+
+    private fun openSocket(address: InetAddress, port: Int, timeout: Int): Socket {
+        val socket = Socket()
+        try {
+            synchronized(stateLock) {
+                checkActive()
+                transportSocket = socket
+            }
+            checkActive()
+            socket.keepAlive = true
+            socket.connect(InetSocketAddress(address, port), timeout)
+            configureKeepAlive(socket)
+            socket.soTimeout = 0
+            checkActive()
+            return socket
+        } catch (error: Throwable) {
+            discardSocket(socket)
+            throw error
+        }
+    }
+
+    private fun discardSocket(socket: Socket) {
+        synchronized(stateLock) {
+            if (transportSocket === socket) transportSocket = null
+        }
+        runCatching { socket.close() }
+    }
+
+    private fun configureKeepAlive(socket: Socket) {
+        if (Build.VERSION.SDK_INT < 29) return // fromSocket() did not duplicate its fd before Q.
+        runCatching {
+            ParcelFileDescriptor.fromSocket(socket)?.use { descriptor ->
+                val fd = descriptor.fileDescriptor
+                Os.setsockoptInt(fd, OsConstants.IPPROTO_TCP, TCP_KEEPIDLE, 15)
+                Os.setsockoptInt(fd, OsConstants.IPPROTO_TCP, TCP_KEEPINTVL, 5)
+                Os.setsockoptInt(fd, OsConstants.IPPROTO_TCP, TCP_KEEPCNT, 3)
+                Os.setsockoptInt(fd, OsConstants.IPPROTO_TCP, OsConstants.TCP_USER_TIMEOUT, OPERATION_TIMEOUT_MS)
+            }
+        } // Unsupported kernels retain Socket.keepAlive; never close the socket's borrowed fd.
+    }
+
+    /**
+     * Bound SSH wire I/O while allowing the receive thread to pause for human host trust.
+     * The short local lock gives completion and timeout exclusive ownership. Socket close
+     * happens outside both locks, and only targets the socket captured when timeout won.
+     */
+    private fun <T> withTransportDeadline(operation: String,
+                                          timeoutMs: Int = OPERATION_TIMEOUT_MS,
+                                          action: ((() -> Boolean) -> Boolean) -> T): T {
+        checkActive()
+        val deadlineLock = Any()
+        val timeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMs.toLong())
+        var expiresAt = System.nanoTime() + timeoutNanos
+        var pending = true
+        var waitingForUser = false
+        var timedOut = false
+        val awaitConfirmation: (() -> Boolean) -> Boolean = { confirm ->
+            synchronized(deadlineLock) {
+                if (!pending) throw SshTunnelException("SSH $operation timed out")
+                waitingForUser = true
+            }
+            try {
+                checkActive()
+                confirm()
+            } finally {
+                synchronized(deadlineLock) {
+                    waitingForUser = false
+                    expiresAt = System.nanoTime() + timeoutNanos
+                }
+            }
+        }
+        val deadline = deadlines.scheduleWithFixedDelay({
+            val socket = synchronized(deadlineLock) {
+                if (pending && !waitingForUser && System.nanoTime() >= expiresAt) {
+                    pending = false
+                    timedOut = true
+                    synchronized(stateLock) { transportSocket }
+                } else null
+            }
+            runCatching { socket?.close() }
+        }, 100, 100, TimeUnit.MILLISECONDS)
+        try {
+            val result = action(awaitConfirmation)
+            synchronized(deadlineLock) {
+                if (!pending) throw SshTunnelException("SSH $operation timed out")
+                pending = false
+            }
+            checkActive()
+            return result
+        } catch (error: Throwable) {
+            val expired = synchronized(deadlineLock) { pending = false; timedOut }
+            if (expired) throw SshTunnelException("SSH $operation timed out", error)
+            throw error
+        } finally {
+            synchronized(deadlineLock) { pending = false }
+            deadline.cancel(false)
+        }
     }
 
     private fun authenticate(connection: Connection, profile: ServerProfile) {
+        checkActive()
         when (profile.sshAuthType) {
             ServerProfile.SSH_AUTH_PASSWORD -> {
                 val password = observer.getSshPassword()  //Possibly blocking call
-                connection.authenticateWithPassword(profile.sshUsername, password)
+                checkActive()
+                withTransportDeadline("password authentication") {
+                    connection.authenticateWithPassword(profile.sshUsername, password)
+                }
                 if (!connection.isAuthenticationComplete)
                     throw SshTunnelException("SSH Password authentication failed")
             }
@@ -199,15 +395,22 @@ class SshClient(private val observer: Observer) {
                 val pk = profile.sshPrivateKey
                 val cached = KeyCache.get(pk)
                 if (cached != null) {
-                    connection.authenticateWithPublicKey(profile.sshUsername, cached)
+                    checkActive()
+                    withTransportDeadline("public-key authentication") {
+                        connection.authenticateWithPublicKey(profile.sshUsername, cached)
+                    }
                 } else {
                     val pemKey = PemKey(pk)
                     if (pemKey.isEncrypted()) {
                         val password = observer.getSshKeyPassword()  //Blocking call
+                        checkActive()
                         pemKey.decrypt(password)
                     }
                     val keyPair = pemKey.getKeyPair()
-                    connection.authenticateWithPublicKey(profile.sshUsername, keyPair)
+                    checkActive()
+                    withTransportDeadline("public-key authentication") {
+                        connection.authenticateWithPublicKey(profile.sshUsername, keyPair)
+                    }
                     KeyCache.put(pk, keyPair)
                 }
 
@@ -217,6 +420,7 @@ class SshClient(private val observer: Observer) {
             else -> throw SshTunnelException("Unknown SSH auth type: ${profile.sshAuthType}")
         }
 
+        checkActive()
         if (!connection.isAuthenticationComplete)
             throw SshTunnelException("SSH authentication failed")
     }
@@ -228,13 +432,19 @@ class SshClient(private val observer: Observer) {
         // So we create a temporary ServerSocket, close it immediately and try to use its port.
         // But between the close-reuse, that port can be assigned to someone else, so we try again.
         repeat(50) {
+            checkActive()
             try {
                 val attemptedPort = ServerSocket(0).use { it.localPort }
                 val attemptedAddress = InetSocketAddress(localHost, attemptedPort)
                 val forwarder = connection.createLocalPortForwarder(attemptedAddress, profile.host, profile.port)
+                if (cancelled) {
+                    forwarder.close()
+                    checkActive()
+                }
                 return TunnelGate(localHost, attemptedPort, forwarder)
             } catch (_: IOException) {
-                //Retry
+                checkActive()
+                // Retry a local port collision only while this session is still active.
             } catch (e: Throwable) {
                 throw unwrapLibraryException(e)
             }
@@ -336,5 +546,17 @@ class SshClient(private val observer: Observer) {
                 }
             }
         }
+    }
+
+    private companion object {
+        const val CONNECTION_TIMEOUT_MS = 10_000
+        const val OPERATION_TIMEOUT_MS = 15_000
+        // Stable Linux TCP UAPI option values; these names are absent from public OsConstants.
+        const val TCP_KEEPIDLE = 4
+        const val TCP_KEEPINTVL = 5
+        const val TCP_KEEPCNT = 6
+        val deadlines = ScheduledThreadPoolExecutor(1) { task ->
+            Thread(task, "SSH operation deadlines").apply { isDaemon = true }
+        }.apply { removeOnCancelPolicy = true }
     }
 }

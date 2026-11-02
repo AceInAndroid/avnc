@@ -42,7 +42,7 @@
     <string name="msg_about_app">빠르고 안전한 VNC 클라이언트입니다. VNC 서버를 실행하는 모든 장치를 원격으로 보고 제어합니다. 
 \n 
 \n 
-\nAVNC는 오픈 소스 및 카피레프트 소프트웨어입니다 — 많은 기여자의 도움으로 만들어졌습니다.</string>
+\nFastVNC는 오픈 소스 및 카피레프트 소프트웨어입니다 — 많은 기여자의 도움으로 만들어졌습니다.</string>
     <string name="msg_imported">가져옴</string>
     <string name="tip_empty_server_list">서버 목록이 비어 있습니다.\n\'<b>+</b>\'를 클릭하여 서버 추가, 또는\n상단 주소 표시줄을 사용하여 직접 연결합니다.</string>
     <string name="tip_urlbar">IP 주소, 호스트 이름 또는 \'vnc://\' URI를 입력할 수 있습니다.</string>
@@ -214,7 +214,7 @@
     <string name="msg_saved">저장됨</string>
     <string name="msg_wake_on_lan_help">Wake-on-LAN은 원격으로 PC를 켜는 데 사용할 수 있습니다.
 \n
-\n먼저 원격 컴퓨터에서 WoL을 구성한 다음 AVNC에서 활성화합니다.
+\n먼저 원격 컴퓨터에서 WoL을 구성한 다음 FastVNC에서 활성화합니다.
 \n활성화하면 WoL 매직 패킷이 이 서버에 연결되기 전에 자동으로 전송됩니다.</string>
     <string name="hint_send_text_to_server">서버로 텍스트 보내기</string>
     <string name="msg_done">실행</string>

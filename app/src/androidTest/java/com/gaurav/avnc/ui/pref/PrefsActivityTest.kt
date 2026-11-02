@@ -9,9 +9,14 @@
 package com.gaurav.avnc.ui.pref
 
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
+import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.rules.ActivityScenarioRule
+import com.gaurav.avnc.R
 import com.gaurav.avnc.R.string.*
 import com.gaurav.avnc.checkIsDisplayed
 import com.gaurav.avnc.checkWillBeDisplayed
@@ -24,6 +29,8 @@ import com.gaurav.avnc.util.trustCertificate
 import org.junit.Assert
 import org.junit.Rule
 import org.junit.Test
+import org.hamcrest.Matchers.allOf
+import org.hamcrest.Matchers.not
 
 /**
  * Simple tests to make sure [PrefsActivity] is not completely broken.
@@ -36,27 +43,31 @@ class PrefsActivityTest {
 
     @Test
     fun uiTest() {
-        openSection(pref_ui, pref_ui_summary, pref_theme)
+        openSection(settings_appearance, settings_appearance_summary, pref_theme)
     }
 
     @Test
     fun viewerTest() {
-        openSection(pref_viewer, pref_viewer_summary, pref_fullscreen)
+        openSection(settings_appearance, settings_appearance_summary, pref_theme)
+        onView(withText(pref_viewer)).doClick()
+        onView(withText(pref_fullscreen)).checkWillBeDisplayed()
     }
 
     @Test
     fun inputTest() {
-        openSection(pref_input, pref_input_summary, pref_gesture_style)
+        openSection(settings_input, settings_input_summary, pref_system_keyboard)
+        onView(withText(settings_input_details)).doClick()
+        onView(withText(pref_gesture_style)).checkWillBeDisplayed()
     }
 
     @Test
     fun serverTest() {
-        openSection(pref_servers, pref_server_summary, pref_discovery)
+        openSection(settings_connection, settings_connection_summary, pref_clipboard_sync)
     }
 
     @Test
     fun toolsTest() {
-        openSection(pref_tools, pref_tools_summary, pref_import_export)
+        openSection(settings_advanced, settings_advanced_summary, title_about)
     }
 
     @Test
@@ -64,7 +75,7 @@ class PrefsActivityTest {
         trustCertificate(targetContext, getTestCert())
         Assert.assertTrue(isCertificateTrusted(targetContext, getTestCert()))
 
-        openSection(pref_servers, pref_server_summary, pref_forget_known_hosts)
+        openSection(settings_connection, settings_connection_summary, pref_forget_known_hosts)
         onView(withText(pref_forget_known_hosts)).doClick()
         onView(withText(pref_forget_known_hosts_question)).checkWillBeDisplayed()
         onView(withText(title_forget)).doClick()
@@ -77,13 +88,14 @@ class PrefsActivityTest {
      * Validates section can be opened.
      */
     private fun openSection(sectionNameId: Int, sectionSummaryId: Int, childPrefNameId: Int) {
-        onView(withText(sectionNameId)).checkIsDisplayed()
-        onView(withText(sectionSummaryId)).checkIsDisplayed()
+        val home = isDescendantOfA(withId(R.id.settings_home))
+        onView(allOf(withText(sectionNameId), home)).perform(scrollTo()).checkIsDisplayed()
+        onView(allOf(withText(sectionSummaryId), home)).checkIsDisplayed()
 
-        onView(withText(sectionNameId)).doClick()
+        onView(allOf(withText(sectionNameId), home)).doClick()
 
         onView(withText(childPrefNameId)).checkWillBeDisplayed()
-        onView(withText(sectionNameId)).checkIsDisplayed()
-        onView(withText(sectionSummaryId)).check(doesNotExist())
+        onView(allOf(withText(sectionNameId), isDescendantOfA(withId(R.id.toolbar)), isDisplayed())).checkIsDisplayed()
+        onView(allOf(withText(sectionSummaryId), home)).check(matches(not(isDisplayed())))
     }
 }

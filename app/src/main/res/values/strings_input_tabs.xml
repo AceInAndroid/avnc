@@ -1,0 +1,10 @@
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="input_tab_keyboard">Computer keyboard</string>
+    <string name="input_tab_shortcuts">Shortcuts</string>
+    <string name="input_panel_close">Close input panel</string>
+    <string name="input_disconnect">Disconnect</string>
+    <string name="input_floating_touchpad">Floating touchpad</string>
+    <string name="input_shortcuts_hint">Run shortcuts on the remote computer. Paste uses its current clipboard.</string>
+    <string name="input_touchpad_hint">Slide to move • Two fingers to scroll</string>
+    <string name="input_connection">Connection</string>
+</resources>

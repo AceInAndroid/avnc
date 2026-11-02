@@ -5,7 +5,6 @@ package com.gaurav.avnc.ui.vnc
 
 import android.annotation.SuppressLint
 import android.content.res.ColorStateList
-import android.content.res.Configuration
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.InputDevice
@@ -16,8 +15,8 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.widget.LinearLayout
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.HorizontalScrollView
+import android.widget.ScrollView
 import android.os.Build
 import androidx.core.view.isVisible
 import com.gaurav.avnc.R
@@ -33,8 +32,6 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                            val description: String = label)
 
     private val style = ControlStyle(activity)
-    private val onSurface get() = style.ink
-    private val primary get() = style.blue
     private val root = FrameLayout(activity).apply {
         setPadding(dp(4), dp(4), dp(4), dp(8))
         background = style.background(R.color.viewer_solid, 24)
@@ -57,7 +54,6 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
     private val pageButtons = mutableMapOf<Page, MaterialButton>()
     private var page = Page.Common
     private var extraSymbols = false
-    private var headerTouchpad: ImageButton? = null
     private var measuredContentWidth = 0
     private var capsLock = false
     private var repeatedKey: Key? = null
@@ -97,22 +93,27 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         renderPage()
     }
 
-    fun updateTouchpadSelection(selected: Boolean) {
-        headerTouchpad?.apply {
-            isSelected = selected
-            imageTintList = ColorStateList.valueOf(if (selected) style.blue else style.ink)
-            if (Build.VERSION.SDK_INT >= 30) stateDescription = activity.getString(
-                    if (selected) R.string.control_active else R.string.control_inactive)
-        }
-    }
+    // Selection for the shared main tabs is owned by Toolbar.
+    fun updateTouchpadSelection(@Suppress("UNUSED_PARAMETER") selected: Boolean) = Unit
 
     /** Limit desktop-wide key stretching without changing the keyboard's reserved bottom space. */
     fun updateWidth() {
-        val width = minOf(activity.binding.keyboardContentHost.width - dp(8), dp(760)).coerceAtLeast(0)
-        if (width == 0 || width == measuredContentWidth || content.parent != root) return
-        measuredContentWidth = width
-        content.layoutParams = FrameLayout.LayoutParams(width, -2, Gravity.CENTER_HORIZONTAL)
-        updateSelection()
+        val width = minOf(activity.binding.keyboardContentHost.width - dp(8), dp(1100)).coerceAtLeast(0)
+        if (width == 0 || content.parent != root) return
+        if (width != measuredContentWidth) {
+            measuredContentWidth = width
+            content.layoutParams = FrameLayout.LayoutParams(width, -2, Gravity.CENTER_HORIZONTAL)
+            updateSelection()
+        }
+        val viewport = keysArea.findViewWithTag<ScrollView>("keyboard_vertical_deck") ?: return
+        val host = activity.binding.viewerRoot
+        val available = host.height - host.paddingTop - host.paddingBottom
+        if (available <= 0) return
+        val naturalDeck = rowHeight() * if (page == Page.Common) 5 else 4
+        // Keep a visible remote region on short landscape windows without shrinking key targets.
+        val height = minOf(naturalDeck, (available - dp(72 + 108)).coerceAtLeast(dp(48)))
+        if (viewport.layoutParams.height != height)
+            viewport.layoutParams = viewport.layoutParams.apply { this.height = height }
     }
 
     fun show() {
@@ -185,48 +186,61 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
         modifierButtons.clear()
         letterButtons.clear()
         pageButtons.clear()
-        val shortcuts = row(48)
-        listOf(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_ALT_LEFT,
-               KeyEvent.KEYCODE_META_LEFT).forEach { code ->
-            shortcuts.addView(modifier(modifierLabel(code), code).apply { textSize = 12f }, cell())
-        }
-        shortcuts.addView(keyButton(Key("Tab", KeyEvent.KEYCODE_TAB)).apply { textSize = 12f }, cell())
-        shortcuts.addView(keyButton(Key("Esc", KeyEvent.KEYCODE_ESCAPE)).apply { textSize = 12f }, cell())
-        headerTouchpad = null
-        if (!activity.viewModel.remoteInputConfig.isMac) {
-            headerTouchpad = style.icon(R.drawable.ic_control_touchpad, R.string.control_touchpad).apply {
-                id = R.id.keyboard_touchpad
-                setOnClickListener { activity.toolbar.toggleTouchpad() }
-            }
-            shortcuts.addView(headerTouchpad, LinearLayout.LayoutParams(dp(48), dp(48)))
-            shortcuts.addView(style.icon(R.drawable.ic_control_more, R.string.control_more).apply {
-                id = R.id.keyboard_more; setOnClickListener { activity.toolbar.open() }
+        val header = row(48).apply {
+            tag = "keyboard_header"
+            addView(activity.toolbar.createTabRow(keyboard = true), LinearLayout.LayoutParams(0, -1, 1f))
+            addView(style.icon(R.drawable.ic_control_chevron, R.string.computer_keyboard_close).apply {
+                tag = "keyboard_close"; setOnClickListener { hide() }
             }, LinearLayout.LayoutParams(dp(48), dp(48)))
         }
-        shortcuts.addView(style.icon(R.drawable.ic_control_chevron, R.string.computer_keyboard_close).apply {
-            tag = "keyboard_close"; setOnClickListener { hide() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        if (activity.viewModel.remoteInputConfig.isMac)
-            keysArea.addView(activity.toolbar.macControls.createRow(keyboard = true), LinearLayout.LayoutParams(-1, dp(48)))
+        keysArea.addView(header)
         addFunctionKeys()
-        keysArea.addView(shortcuts)
+        // Scroll the aligned physical rows together when the viewport cannot fit 48dp keys.
+        val deck = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            minimumWidth = dp(if (page == Page.Common) 840 else 680)
+        }
+        val scroll = HorizontalScrollView(activity).apply {
+            tag = "keyboard_key_deck"
+            isFillViewport = true
+            isHorizontalScrollBarEnabled = true
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            isHorizontalFadingEdgeEnabled = true
+            setFadingEdgeLength(dp(16))
+            addView(deck, FrameLayout.LayoutParams(-2, -2))
+        }
+        keysArea.addView(ScrollView(activity).apply {
+            tag = "keyboard_vertical_deck"
+            isFillViewport = false
+            addView(scroll, FrameLayout.LayoutParams(-1, -2))
+        }, LinearLayout.LayoutParams(-1, -2))
         when (page) {
             Page.Common -> {
-                addKeys("qwertyuiop".map { characterKey(it) })
-                val home = row()
-                home.addView(View(activity), cell(.5f))
-                "asdfghjkl".forEach { home.addView(keyButton(characterKey(it)), cell()) }
-                home.addView(View(activity), cell(.5f))
-                keysArea.addView(home)
-                val third = row()
-                third.addView(modifier("⇧", KeyEvent.KEYCODE_SHIFT_LEFT), cell(1.5f))
-                "zxcvbnm".forEach { third.addView(keyButton(characterKey(it)), cell()) }
-                third.addView(keyButton(backspace()), cell(1.5f))
-                keysArea.addView(third)
+                val numbers = row().apply { tag = "keyboard_number_row" }
+                "`1234567890-=".forEach { numbers.addView(keyButton(characterKey(it)), cell()) }
+                numbers.addView(keyButton(backspace()), cell(2f))
+                deck.addView(numbers)
+                val upper = row().apply { tag = "keyboard_qwerty_row" }
+                upper.addView(keyButton(Key("Tab", KeyEvent.KEYCODE_TAB)), cell(1.5f))
+                "qwertyuiop[]".forEach { upper.addView(keyButton(characterKey(it)), cell()) }
+                upper.addView(keyButton(characterKey('\\')), cell(1.5f))
+                deck.addView(upper)
+                val home = row().apply { tag = "keyboard_home_row" }
+                home.addView(capsButton(), cell(1.75f))
+                "asdfghjkl;'".forEach { home.addView(keyButton(characterKey(it)), cell()) }
+                home.addView(keyButton(Key(if (activity.viewModel.remoteInputConfig.isMac) "return" else "Enter",
+                        KeyEvent.KEYCODE_ENTER, description = activity.getString(R.string.computer_keyboard_enter))), cell(2.25f))
+                deck.addView(home)
+                val lower = row().apply { tag = "keyboard_shift_row" }
+                lower.addView(modifier("⇧", KeyEvent.KEYCODE_SHIFT_LEFT), cell(2.25f))
+                "zxcvbnm,./".forEach { lower.addView(keyButton(characterKey(it)), cell()) }
+                lower.addView(modifier("⇧", KeyEvent.KEYCODE_SHIFT_RIGHT), cell(1.75f))
+                lower.addView(keyButton(arrow(KeyEvent.KEYCODE_DPAD_UP)), cell())
+                deck.addView(lower)
             }
             Page.Symbols -> {
-                addKeys((if (extraSymbols) "!@#$%^&*()" else "1234567890").map { characterKey(it) })
-                addKeys((if (extraSymbols) "_+{}\\|~<>" else "-/:;()$&@\"").map { characterKey(it) })
+                addKeys(deck, (if (extraSymbols) "!@#$%^&*()" else "1234567890").map { characterKey(it) })
+                addKeys(deck, (if (extraSymbols) "_+{}\\|~<>" else "-/:;()$&@\"").map { characterKey(it) })
                 val third = row()
                 third.addView(button(if (extraSymbols) "123" else "#+=" , activity.getString(R.string.control_symbol_more)).apply {
                     tag = "keyboard_symbols_more"
@@ -234,21 +248,16 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                 }, cell(1.7f))
                 (if (extraSymbols) "[]=*`'?!" else ".,?!'=+").forEach { third.addView(keyButton(characterKey(it)), cell()) }
                 third.addView(keyButton(backspace()), cell(1.7f))
-                keysArea.addView(third)
+                deck.addView(third)
             }
             Page.Functions -> {
                 val nav = row()
-                val caps = button("Caps").apply {
-                    tag = "keyboard_key_${KeyEvent.KEYCODE_CAPS_LOCK}"
-                    setOnClickListener { capsLock = !capsLock; tap(Key("", KeyEvent.KEYCODE_CAPS_LOCK), false); updateSelection() }
-                }
-                modifierButtons[KeyEvent.KEYCODE_CAPS_LOCK] = caps
-                nav.addView(caps, cell())
+                nav.addView(capsButton(), cell())
                 listOf(Key("Home", KeyEvent.KEYCODE_MOVE_HOME), Key("↑", KeyEvent.KEYCODE_DPAD_UP, description = activity.getString(R.string.computer_keyboard_up)),
                        Key("End", KeyEvent.KEYCODE_MOVE_END), Key("PgUp", KeyEvent.KEYCODE_PAGE_UP), Key("Ins", KeyEvent.KEYCODE_INSERT)).forEach {
                     nav.addView(keyButton(it), cell())
                 }
-                keysArea.addView(nav)
+                deck.addView(nav)
                 val arrows = row()
                 arrows.addView(modifier("⇧", KeyEvent.KEYCODE_SHIFT_LEFT), cell())
                 listOf(Key("←", KeyEvent.KEYCODE_DPAD_LEFT, description = activity.getString(R.string.computer_keyboard_left)),
@@ -257,7 +266,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                        Key("PgDn", KeyEvent.KEYCODE_PAGE_DOWN), Key("Del", KeyEvent.KEYCODE_FORWARD_DEL)).forEach {
                     arrows.addView(keyButton(it), cell())
                 }
-                keysArea.addView(arrows)
+                deck.addView(arrows)
                 val textNavigation = row()
                 listOf(RemoteAction.LINE_START to R.string.platform_keyboard_line_start,
                        RemoteAction.LINE_END to R.string.platform_keyboard_line_end,
@@ -269,10 +278,15 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                         setOnClickListener { if (isVisible) inputHandler.onRemoteAction(action) }
                     }, cell())
                 }
-                keysArea.addView(textNavigation)
+                deck.addView(textNavigation)
             }
         }
-        val bottom = row()
+        val bottom = row().apply { tag = "keyboard_modifier_row" }
+        val modifierOrder = if (activity.viewModel.remoteInputConfig.isMac)
+            listOf(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_META_LEFT)
+        else listOf(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_META_LEFT, KeyEvent.KEYCODE_ALT_LEFT)
+        modifierOrder.forEach { code -> bottom.addView(modifier(modifierLabel(code), code), cell(1.3f)) }
+        bottom.addView(keyButton(Key(activity.getString(R.string.computer_keyboard_space), KeyEvent.KEYCODE_SPACE)), cell(4.4f))
         fun pageButton(destination: Page, label: String, weight: Float) {
             bottom.addView(button(label).apply {
                 tag = "keyboard_page_${destination.name.lowercase()}"
@@ -280,19 +294,34 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                 pageButtons[destination] = this
             }, cell(weight))
         }
-        pageButton(Page.Common, "ABC", 1.25f)
-        pageButton(Page.Symbols, "123", 1.25f)
-        pageButton(Page.Functions, activity.getString(R.string.computer_keyboard_navigation), 1f)
-        bottom.addView(keyButton(characterKey(',')), cell(.8f))
-        bottom.addView(keyButton(Key(activity.getString(R.string.computer_keyboard_space), KeyEvent.KEYCODE_SPACE)), cell(3.2f))
-        bottom.addView(keyButton(characterKey('.')), cell(.8f))
-        bottom.addView(keyButton(Key("↵", KeyEvent.KEYCODE_ENTER, description = activity.getString(R.string.computer_keyboard_enter))).apply {
-            setTextColor(style.blue)
-        }, cell(1.7f))
-        keysArea.addView(bottom)
+        pageButton(Page.Common, "ABC", 1f)
+        pageButton(Page.Symbols, "123", 1f)
+        pageButton(Page.Functions, activity.getString(R.string.computer_keyboard_navigation), 1.7f)
+        if (page == Page.Common) {
+            listOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT).forEach {
+                bottom.addView(keyButton(arrow(it)), cell())
+            }
+        } else {
+            bottom.addView(keyButton(Key("↵", KeyEvent.KEYCODE_ENTER,
+                    description = activity.getString(R.string.computer_keyboard_enter))), cell(2f))
+        }
+        deck.addView(bottom)
         pageButtons.forEach { (destination, button) -> select(button, page == destination) }
         updateSelection()
-        updateTouchpadSelection(activity.floatingTouchpad.isExpanded)
+        root.post { updateWidth() }
+    }
+
+    private fun capsButton() = button(if (activity.viewModel.remoteInputConfig.isMac) "⇪" else "Caps").apply {
+        tag = "keyboard_key_${KeyEvent.KEYCODE_CAPS_LOCK}"
+        setOnClickListener { capsLock = !capsLock; tap(Key("", KeyEvent.KEYCODE_CAPS_LOCK), false); updateSelection() }
+        modifierButtons[KeyEvent.KEYCODE_CAPS_LOCK] = this
+    }
+
+    private fun arrow(code: Int): Key = when (code) {
+        KeyEvent.KEYCODE_DPAD_UP -> Key("↑", code, description = activity.getString(R.string.computer_keyboard_up))
+        KeyEvent.KEYCODE_DPAD_DOWN -> Key("↓", code, description = activity.getString(R.string.computer_keyboard_down))
+        KeyEvent.KEYCODE_DPAD_LEFT -> Key("←", code, description = activity.getString(R.string.computer_keyboard_left))
+        else -> Key("→", code, description = activity.getString(R.string.computer_keyboard_right))
     }
 
     private fun backspace() = Key("⌫", KeyEvent.KEYCODE_DEL, description = activity.getString(R.string.computer_keyboard_backspace))
@@ -329,7 +358,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
             val locked = modifiers[code] == Modifier.Locked
             select(button, enabled)
             val label = modifierLabel(code, accessible = true)
-            button.text = if (code == KeyEvent.KEYCODE_SHIFT_LEFT) "⇧" else modifierLabel(code)
+            button.text = if (code == KeyEvent.KEYCODE_SHIFT_LEFT || code == KeyEvent.KEYCODE_SHIFT_RIGHT) "⇧" else modifierLabel(code)
             button.icon = if (locked) androidx.appcompat.content.res.AppCompatResources.getDrawable(activity, R.drawable.ic_control_lock) else null
             button.iconSize = dp(12)
             button.iconPadding = dp(2)
@@ -345,20 +374,17 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
                 else -> activity.getString(R.string.computer_keyboard_modifier, label)
             }
         }
-        val shifted = KeyEvent.KEYCODE_SHIFT_LEFT in modifiers
+        val shifted = KeyEvent.KEYCODE_SHIFT_LEFT in modifiers || KeyEvent.KEYCODE_SHIFT_RIGHT in modifiers
         val uppercase = capsLock.xor(shifted)
         letterButtons.forEach { (button, key) ->
             val character = key.label.singleOrNull()
             val label = when {
                 character?.isLetter() == true -> if (uppercase) key.label.uppercase() else key.label
-                shifted && character != null && character in '0'..'9' -> ")!@#$%^&*("[character - '0'].toString()
-                shifted && character == ',' -> "<"
-                shifted && character == '.' -> ">"
+                shifted && character != null && !key.shifted -> shiftedCharacters[character]?.toString() ?: key.label
                 else -> key.label
             }
             button.text = label
-            if (character?.isLetterOrDigit() == true || character == ',' || character == '.')
-                button.contentDescription = label
+            if (character != null) button.contentDescription = label
         }
     }
 
@@ -373,25 +399,27 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
             }
         }
         return when (code) {
-            KeyEvent.KEYCODE_SHIFT_LEFT -> "Shift"
+            KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> "Shift"
             KeyEvent.KEYCODE_CTRL_LEFT -> "Ctrl"
             KeyEvent.KEYCODE_ALT_LEFT -> "Alt"
             KeyEvent.KEYCODE_META_LEFT -> "Win"
-            else -> "Caps"
+            else -> if (activity.viewModel.remoteInputConfig.isMac) "⇪" else "Caps"
         }
     }
 
-    private fun addKeys(keys: List<Key>) {
+    private fun addKeys(deck: LinearLayout, keys: List<Key>) {
         val row = row()
         keys.forEach { row.addView(keyButton(it), cell()) }
-        keysArea.addView(row)
+        deck.addView(row)
     }
 
     /** Keep desktop function keys visible on every page without shrinking their touch targets. */
     private fun addFunctionKeys() {
         val functionKeys = row(48)
-        val buttons = (0..11).map { index ->
-            keyButton(Key("F${index + 1}", KeyEvent.KEYCODE_F1 + index)).apply {
+        val keys = listOf(Key("Esc", KeyEvent.KEYCODE_ESCAPE)) +
+                (0..11).map { Key("F${it + 1}", KeyEvent.KEYCODE_F1 + it) }
+        val buttons = keys.map { key ->
+            keyButton(key).apply {
                 textSize = 12f
                 minimumWidth = dp(48)
                 functionKeys.addView(this, LinearLayout.LayoutParams(dp(48), -1).apply {
@@ -491,7 +519,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
     }
 
     private fun cell(weight: Float = 1f) = LinearLayout.LayoutParams(0, -1, weight).apply {
-        setMargins(dp(2), dp(3), dp(2), dp(3))
+        setMargins(dp(2), dp(1), dp(2), dp(1))
     }
 
     private fun button(label: String, description: String = label) = style.button(label, description).apply {
@@ -502,7 +530,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
     }
 
     private fun select(button: MaterialButton, selected: Boolean) = style.select(button, selected, key = true)
-    private fun rowHeight(): Int = dp(if (activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 38 else 48)
+    private fun rowHeight(): Int = dp(48) + 2 * dp(1)
     private fun dp(value: Int) = style.dp(value)
 
     private fun characterKey(char: Char): Key {
@@ -526,6 +554,7 @@ class ComputerKeyboard(private val activity: VncActivity, private val inputHandl
     }
 
     private companion object {
+        val shiftedCharacters = "`1234567890-=[]\\;',./".zip("~!@#$%^&*()_+{}|:\"<>?").toMap()
         val repeatableKeys = setOf(KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_DPAD_LEFT,
                 KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN)
     }

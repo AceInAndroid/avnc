@@ -31,7 +31,7 @@
     <string name="msg_about_app">Hızlı ve güvenli bir VNC istemcisi. Bir VNC sunucusu çalıştıran herhangi bir aygıtı uzaktan görüntüleyin ve denetleyin.
 \n
 \n
-\nAVNC, katkıda bulunan birçok kişinin yardımıyla yapılmış, açık kaynaklı ve copyleft bir yazılımdır.</string>
+\nFastVNC, katkıda bulunan birçok kişinin yardımıyla yapılmış, açık kaynaklı ve copyleft bir yazılımdır.</string>
     <string name="msg_server_profile_added">Sunucu eklendi</string>
     <string name="msg_server_profile_deleted">Sunucu silindi</string>
     <string name="msg_pip_not_supported">Bu aygıtta desteklenmiyor</string>
@@ -213,7 +213,7 @@
     <string name="hint_wol_mac">MAC adresi</string>
     <string name="msg_wake_on_lan_help">LAN üzerinden uyandırma bir bilgisayarı uzaktan açmak için kullanılabilir.
 \n
-\nİlk olarak, LAN üzerinden uyandırmayı uzak bilgisayarda yapılandırın, ardından AVNC\'de etkinleştirin.
+\nİlk olarak, LAN üzerinden uyandırmayı uzak bilgisayarda yapılandırın, ardından FastVNC\'de etkinleştirin.
 \nEtkinleştirildikten sonra, LAN üzerinden uyandırma sihirli paketi bu sunucuya bağlanmadan önce otomatik olarak gönderilecektir.</string>
     <string name="msg_tap_to_select_a_key">Anahtar seçmek için dokun:</string>
     <string name="title_load_defaults">Öntanımlıları yükle</string>

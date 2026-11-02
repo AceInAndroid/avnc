@@ -19,8 +19,8 @@ import com.gaurav.avnc.util.EdgeToEdgeHelper
 class AboutActivity : AppCompatActivity() {
 
     companion object {
-        const val GIT_REPO_URL = "https://github.com/gujjwal00/avnc"
-        const val BUG_REPORT_URL = "https://github.com/gujjwal00/avnc/issues/new"
+        const val GIT_REPO_URL = "https://github.com/AceInAndroid/avnc"
+        const val BUG_REPORT_URL = "$GIT_REPO_URL/issues/new"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

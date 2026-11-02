@@ -45,9 +45,7 @@ import com.gaurav.avnc.vnc.UserCredential
 import com.gaurav.avnc.vnc.VncClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import java.io.IOException
 import java.lang.ref.WeakReference
 import java.security.cert.X509Certificate
 
@@ -265,6 +263,9 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
      */
     val disconnectReason = MutableLiveData("")
 
+    /** Actual credential/trust waits are separate from wire connection progress. */
+    val awaitingUser = MutableLiveData(false)
+
     /**
      * Fired when we need some credentials from user.
      * It will trigger the Login dialog.
@@ -444,11 +445,29 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
      * Miscellaneous
      **************************************************************************/
 
+    /** Explicit legacy auxiliary-key action; automatic sends belong to the foreground controller. */
     fun sendClipboardText() {
-        if (pref.server.clipboardSync && connected) launchIO {
-            getClipboardText(app)?.let { messenger?.sendClipboardText(it) }
+        if (pref.server.clipboardSync && connected) launchMain {
+            getClipboardText(app)?.let { sendClipboardText(it) }
         }
     }
+
+    fun sendClipboardText(text: String): Boolean {
+        if (!pref.server.clipboardSync || !connected || inPiPMode.value == true ||
+                profile.viewMode == ServerProfile.VIEW_MODE_NO_INPUT ||
+                !com.gaurav.avnc.util.ClipboardHistory.accepts(text)) return false
+        val sender = messenger ?: return false
+        sender.sendClipboardText(text)
+        // A local send supersedes the last server-originated value. Keeping that marker
+        // would suppress a later local copy of it (remote A → local B → local A).
+        lastRemoteClipboardText = null
+        return true
+    }
+
+    @Volatile var lastRemoteClipboardText: String? = null
+        private set
+    @Volatile var remoteClipboardRevision = 0L
+        private set
 
     private var clipReceiverJob: Job? = null
     private fun receiveClipboardText(text: String) {
@@ -463,7 +482,9 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
         }
 
         clipReceiverJob = launchIO {
-            setClipboardText(app, text)
+            lastRemoteClipboardText = text
+            remoteClipboardRevision++
+            if (!setClipboardText(app, text)) lastRemoteClipboardText = null
         }
     }
 
@@ -477,7 +498,12 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
             return li
 
         // Something is missing, so we have to ask the user
-        return loginInfoRequest.getResponseFor(type, viewModelScope)  // Blocking call
+        awaitingUser.postValue(true)
+        return try {
+            loginInfoRequest.getResponseFor(type, viewModelScope)  // Blocking call
+        } finally {
+            awaitingUser.postValue(false)
+        }
     }
 
     /**
@@ -575,6 +601,15 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
     }
 
 
+    private fun awaitConfirmation(title: String, message: String): Boolean {
+        awaitingUser.postValue(true)
+        return try {
+            confirmationRequest.getResponseFor(Pair(title, message), viewModelScope)
+        } finally {
+            awaitingUser.postValue(false)
+        }
+    }
+
     /**************************************************************************
      * Session observer
      **************************************************************************/
@@ -591,20 +626,21 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
                 refreshRemoteInputConfig()
                 ensureDisplaySelection()
                 applyDisplayViewport()
+                awaitingUser.value = false
                 state.value = State.Connected
 
                 rememberLoginInfo()
 
-                // Initial clipboard sync, slightly delayed to allow extended clipboard negotiations
-                delay(1000L)
-                sendClipboardText()
+                // The focused clipboard controller performs initial sync only after explicit opt-in.
             }
         }
 
         override fun onDisconnected() {
             // Block until main thread is synchronised with disconnected state
             runBlocking(Dispatchers.Main) {
+                awaitingUser.value = false
                 state.value = State.Disconnected
+                lastRemoteClipboardText = null
                 displayPointers.clear()
                 displayViews.clear()
                 streamingPresetPending.value = false
@@ -614,11 +650,12 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
         }
 
         override fun onConnectionError(error: Throwable) {
-            when (error) {
-                is IOException -> disconnectReason.postValue(error.message)
-                is UnsatisfiedLinkError -> disconnectReason.postValue("Native library is missing! Please install correct" +
-                                                                      " version of AVNC from F-Droid or Google Play")
+            val message = when (error) {
+                is UnsatisfiedLinkError -> app.getString(R.string.fastvnc_native_library_missing)
+                else -> error.message?.takeIf { it.isNotBlank() }
+                        ?: "Connection failed (${error.javaClass.simpleName})"
             }
+            disconnectReason.postValue(message)
         }
 
         override fun onWakeOnLanBroadcastError(e: Throwable) {
@@ -642,7 +679,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
             val title = "Unknown server certificate"
             val message = getUnknownCertificateMessage(certificate)
-            if (confirmationRequest.getResponseFor(Pair(title, message), viewModelScope)) {
+            if (awaitConfirmation(title, message)) {
                 trustCertificate(app, certificate)
                 return true
             }
@@ -711,7 +748,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
         override fun confirmSshHostKeyWithUser(message: String, isNewHost: Boolean): Boolean {
             val titleRes = if (isNewHost) R.string.title_unknown_ssh_host else R.string.title_ssh_host_key_changed
             val title = app.getString(titleRes)
-            return confirmationRequest.getResponseFor(Pair(title, message), viewModelScope)
+            return awaitConfirmation(title, message)
         }
     }
 }

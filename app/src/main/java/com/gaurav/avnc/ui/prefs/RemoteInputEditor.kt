@@ -39,6 +39,11 @@ object RemoteInputEditor {
         Editor(context, profile, null, false, onChanged).show()
     }
 
+    fun showTemplate(baseContext: Context, platform: RemotePlatform, onChanged: () -> Unit = {}) {
+        require(platform != RemotePlatform.AUTO)
+        Editor(themed(baseContext), null, platform, false, onChanged).show()
+    }
+
     fun showTemplates(baseContext: Context) {
         val context = themed(baseContext)
         val platforms = listOf(RemotePlatform.MAC, RemotePlatform.WINDOWS, RemotePlatform.GENERIC)
@@ -298,7 +303,7 @@ object RemoteInputEditor {
                 val value = TextView(context).apply { text = speed(effective); textSize = 20f; gravity = Gravity.CENTER }
                 body.addView(value, LinearLayout.LayoutParams(-1, dp(48)))
                 var selected = effective
-                val maximum = if (tag == "pointer_speed") 3f else 6f
+                val maximum = if (tag == "pointer_speed") 3f else 10f
                 body.addView(SeekBar(context).apply {
                     max = ((maximum - .25f) / .05f).roundToInt()
                     progress = ((effective.coerceIn(.25f, maximum) - .25f) / .05f).roundToInt()

@@ -75,6 +75,58 @@ class FloatingTouchpadTest : VncSessionTest() {
         }
     }
 
+    @Test fun savedAppearanceAndLiveResizingKeepButtonsUsableAndPanelInsideViewport() {
+        targetPrefs.edit { putInt("touchpad_size", 150); putInt("touchpad_opacity", 35) }
+        vncSession.run {
+            pollingAssert {
+                vncSession.onActivity { activity ->
+                    val panel = activity.findViewById<View>(R.id.floating_touchpad)
+                    val host = activity.binding.touchpadHost
+                    val density = activity.resources.displayMetrics.density
+                    val margin = (8 * density).toInt()
+                    val expectedWidth = minOf(activity.floatingTouchpad.preferredWidthPx,
+                            host.width - host.paddingLeft - host.paddingRight - 2 * margin)
+                    assertEquals(expectedWidth, panel.width)
+                    assertEquals(.35f, panel.alpha, .001f)
+                    assertTrue(panel.x >= host.paddingLeft)
+                    assertTrue(panel.x + panel.width <= host.width - host.paddingRight)
+                    assertTrue(panel.y + panel.height <= host.height - host.paddingBottom)
+                    assertTrue(activity.findViewById<View>(R.id.touchpad_left).height >= (48 * density).toInt())
+                    assertTrue(activity.findViewById<View>(R.id.touchpad_right).width >= (48 * density).toInt())
+                }
+            }
+            vncSession.onActivity { activity ->
+                targetPrefs.edit { putInt("touchpad_size", 75); putInt("touchpad_opacity", 100) }
+                activity.floatingTouchpad.refreshAppearance()
+            }
+            pollingAssert {
+                vncSession.onActivity { activity ->
+                    val density = activity.resources.displayMetrics.density
+                    val panel = activity.findViewById<View>(R.id.floating_touchpad)
+                    assertEquals((165 * density).toInt(), panel.width)
+                    assertEquals(1f, panel.alpha, .001f)
+                    assertTrue(activity.findViewById<View>(R.id.touchpad_surface).height >= (72 * density).toInt())
+                }
+            }
+        }
+        assertTrue(vncSession.server.receivedPointerEvents.isEmpty())
+    }
+
+    @Test fun resizingWhileMouseButtonHeldReleasesItBeforeRelayout() {
+        vncSession.run {
+            vncSession.onActivity { activity ->
+                val left = activity.findViewById<View>(R.id.touchpad_left)
+                touch(left, MotionEvent.ACTION_DOWN, 20f, 20f)
+                targetPrefs.edit { putInt("touchpad_size", 125) }
+                activity.floatingTouchpad.refreshAppearance()
+                assertFalse(left.isPressed)
+            }
+            pollingAssert {
+                assertEquals(listOf(1, 0), vncSession.server.receivedPointerEvents.map { it.mask })
+            }
+        }
+    }
+
     @Test fun buttonsAndSurfaceTapProduceOnlyExpectedClicks() {
         vncSession.run {
             vncSession.onActivity { activity ->
@@ -542,20 +594,32 @@ class FloatingTouchpadTest : VncSessionTest() {
 
     @Test fun expandingCompactedTouchpadNeverClosesKeyboard() {
         vncSession.run {
-            vncSession.onActivity { activity ->
-                activity.showKeyboard()
-                activity.floatingTouchpad.setDocked(false)
-                activity.binding.touchpadHost.setPadding(0, 0, 0, activity.binding.touchpadHost.height)
-                activity.floatingTouchpad.reposition()
-                activity.floatingTouchpad.toggle()
-                activity.floatingTouchpad.toggle()
-                assertTrue(activity.computerKeyboard.isVisible)
-                assertFalse(activity.findViewById<View>(R.id.floating_touchpad).isVisible)
-                activity.binding.touchpadHost.setPadding(0, 0, 0, 0)
-                activity.floatingTouchpad.reposition()
-                assertTrue(activity.floatingTouchpad.isExpanded)
-                assertTrue(activity.computerKeyboard.isVisible)
-            }
+            var original = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            try {
+                vncSession.onActivity {
+                    original = it.requestedOrientation
+                    it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    it.showKeyboard()
+                }
+                pollingAssert {
+                    vncSession.onActivity {
+                        assertEquals(android.content.res.Configuration.ORIENTATION_PORTRAIT, it.resources.configuration.orientation)
+                        assertFalse(it.floatingTouchpad.isDocked)
+                    }
+                }
+                vncSession.onActivity { activity ->
+                    activity.binding.touchpadHost.setPadding(0, 0, 0, activity.binding.touchpadHost.height)
+                    activity.floatingTouchpad.reposition()
+                    activity.floatingTouchpad.toggle()
+                    activity.floatingTouchpad.toggle()
+                    assertTrue(activity.computerKeyboard.isVisible)
+                    assertFalse(activity.findViewById<View>(R.id.floating_touchpad).isVisible)
+                    activity.binding.touchpadHost.setPadding(0, 0, 0, 0)
+                    activity.floatingTouchpad.reposition()
+                    assertTrue(activity.floatingTouchpad.isExpanded)
+                    assertTrue(activity.computerKeyboard.isVisible)
+                }
+            } finally { vncSession.onActivity { it.requestedOrientation = original } }
         }
     }
     @Test fun shortViewportAutomaticallyCompactsWithoutChangingSavedPreference() {

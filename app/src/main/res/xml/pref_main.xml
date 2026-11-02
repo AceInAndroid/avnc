@@ -1,48 +1,14 @@
-<!--
-  ~ Copyright (c) 2020  Gaurav Ujjwal.
-  ~
-  ~ SPDX-License-Identifier:  GPL-3.0-or-later
-  ~
-  ~ See COPYING.txt for more details.
-  -->
-
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
-    app:title="@string/title_settings">
-
-    <Preference
-        app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Appearance"
-        app:icon="@drawable/ic_palette"
-        app:summary="@string/pref_ui_summary"
-        app:title="@string/pref_ui" />
-
-    <Preference
-        app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Viewer"
-        app:icon="@drawable/ic_video"
-        app:summary="@string/pref_viewer_summary"
-        app:title="@string/pref_viewer" />
-
-    <Preference
-        app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Input"
-        app:icon="@drawable/ic_keyboard"
-        app:summary="@string/pref_input_summary"
-        app:title="@string/pref_input" />
-
-    <Preference
-        app:key="remote_input_templates"
-        app:icon="@drawable/ic_computer"
-        app:summary="@string/remote_input_templates_summary"
-        app:title="@string/remote_input_templates" />
-
-    <Preference
-        app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Server"
-        app:icon="@drawable/ic_computer"
-        app:summary="@string/pref_server_summary"
-        app:title="@string/pref_servers" />
-
-    <Preference
-        app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Tools"
-        app:icon="@drawable/ic_tools"
-        app:summary="@string/pref_tools_summary"
-        app:title="@string/pref_tools" />
-
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto" app:title="@string/title_settings">
+    <Preference app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Appearance"
+        app:title="@string/settings_appearance" app:summary="@string/settings_appearance_summary" />
+    <Preference app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$InputOverview"
+        app:title="@string/settings_input" app:summary="@string/settings_input_summary" />
+    <Preference app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Platform"
+        app:title="@string/settings_platform" app:summary="@string/settings_platform_summary" />
+    <Preference app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Server"
+        app:title="@string/settings_connection" app:summary="@string/settings_connection_summary" />
+    <Preference app:fragment="com.gaurav.avnc.ui.prefs.ImportExportFragment"
+        app:title="@string/settings_backup" app:summary="@string/settings_backup_summary" />
+    <Preference app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Tools"
+        app:title="@string/settings_advanced" app:summary="@string/settings_advanced_summary" />
 </PreferenceScreen>

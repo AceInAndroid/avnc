@@ -1,4 +1,4 @@
-AVNC é um cliente VNC de software livre para Android. O app permite que você controle remotamente qualquer dispositivo que tem um servidor VNC implementado.
+FastVNC é um cliente VNC de software livre para Android. O app permite que você controle remotamente qualquer dispositivo que tem um servidor VNC implementado.
 
 Funcionalidades:
 

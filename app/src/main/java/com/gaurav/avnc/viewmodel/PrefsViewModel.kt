@@ -29,6 +29,9 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Viewmodel for preferences activity.
@@ -66,11 +69,57 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
 
     val importExportFinishedEvent = LiveEvent<Result<String>>()
 
+    enum class BackupAction { IMPORT, EXPORT }
+    sealed interface BackupState {
+        data object Idle : BackupState
+        data class Waiting(val action: BackupAction) : BackupState
+        data class Running(val action: BackupAction) : BackupState
+        data class Success(val message: String) : BackupState
+        data class Error(val message: String) : BackupState
+        data object Cancelled : BackupState
+    }
+    val backupState = MutableLiveData<BackupState>(BackupState.Idle)
+    val backupBusy = MutableLiveData(false)
+    private var running = false
+    private var waiting: BackupAction? = null
+    private var retryBackup: (() -> Unit)? = null
+
+    /** Claim an actual biometric/document-picker request, suppressing repeated taps. */
+    fun beginBackupSelection(action: BackupAction): Boolean {
+        if (running || waiting != null) return false
+        waiting = action
+        backupBusy.value = true
+        backupState.value = BackupState.Waiting(action)
+        return true
+    }
+
+    fun cancelBackupSelection() {
+        if (running || waiting == null) return
+        waiting = null
+        backupBusy.value = false
+        backupState.value = BackupState.Cancelled
+    }
+
+    fun failBackupSelection(message: String) {
+        if (running) return
+        waiting = null
+        retryBackup = null
+        backupBusy.value = false
+        backupState.value = BackupState.Error(message)
+    }
+
+    fun retryLastBackup(): Boolean {
+        if (running || waiting != null) return false
+        val retry = retryBackup ?: return false
+        retry()
+        return true
+    }
+
     /**
      * Exports data to given [uri].
      */
     fun export(uri: Uri) {
-        launchImportExport {
+        launchImportExport(BackupAction.EXPORT) {
             val json = exportJson()
 
             // Write out
@@ -87,7 +136,7 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
      * for export, e.g. via QR code.
      */
     fun export(jsonDestination : MutableLiveData<String>) {
-        launchImportExport {
+        launchImportExport(BackupAction.EXPORT) {
             val json = exportJson()
             jsonDestination.postValue(json)
             app.getString(R.string.msg_exported)
@@ -98,7 +147,7 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
      * Imports data from given [uri].
      */
     fun import(uri: Uri) {
-        launchImportExport {
+        launchImportExport(BackupAction.IMPORT) {
             val json = when (uri.scheme) {
                 "http", "https" -> readFromNetwork(uri)
                 else -> app.contentResolver.openInputStream(uri)?.use { stream ->
@@ -146,7 +195,7 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
      * Imports data from given JSON string (e.g. read off a QR code).
      */
     fun import(json: String) {
-        launchImportExport {
+        launchImportExport(BackupAction.IMPORT) {
             importJson(json)
             app.getString(R.string.msg_imported)
         }
@@ -156,12 +205,28 @@ class PrefsViewModel(app: Application) : BaseViewModel(app) {
      * Runs an import/export operation on a background thread and fires
      * [importExportFinishedEvent] with its [Result].
      */
-    private fun launchImportExport(block: suspend () -> String) {
-        launchIO {
-            runCatching {
-                block()
-            }.let {
-                importExportFinishedEvent.fireAsync(it)
+    private fun launchImportExport(action: BackupAction, block: suspend () -> String) {
+        if (running || (waiting != null && waiting != action)) return
+        waiting = null
+        running = true
+        backupBusy.value = true
+        backupState.value = BackupState.Running(action)
+        retryBackup = { launchImportExport(action, block) }
+        launchMain {
+            try {
+                val message = withContext(Dispatchers.IO) { block() }
+                backupState.value = BackupState.Success(message)
+                importExportFinishedEvent.fire(Result.success(message))
+            } catch (_: CancellationException) {
+                backupState.value = BackupState.Cancelled
+            } catch (error: Exception) {
+                val detail = error.message?.takeIf { it.isNotBlank() }
+                        ?: app.getString(R.string.settings_backup_error_hint)
+                backupState.value = BackupState.Error(app.getString(R.string.settings_backup_error, detail))
+                importExportFinishedEvent.fire(Result.failure(error))
+            } finally {
+                running = false
+                backupBusy.value = false
             }
         }
     }

@@ -32,7 +32,7 @@
     <string name="msg_about_app">Швидкий і безпечний VNC-клієнт. Переглядайте і керуйте віддалено будь-яким пристроєм, що працює на VNC-сервері.
 \n
 \n
-\nAVNC це copyleft-ПЗ з відкритим кодом — зроблене з допомогою багатьох співрозробників.</string>
+\nFastVNC це copyleft-ПЗ з відкритим кодом — зроблене з допомогою багатьох співрозробників.</string>
     <string name="msg_invalid_key_file">Неправильний файл приватного ключа</string>
     <string name="msg_invalid_vnc_uri">Неправильна URI-адреса VNC</string>
     <string name="desc_save_discovered_server_btn">Зберегти</string>
@@ -213,7 +213,7 @@
     <string name="msg_saved">Збережено</string>
     <string name="msg_tap_to_select_a_key">Натисніть, щоб вибрати ключ:</string>
     <string name="tip_session_end">Щоб завершити сеанс, торкніться навігаційної кнопки «Назад» так само, як ви повертаєтеся після відтворення відео.</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN можна використовувати для віддаленого ввімкнення комп’ютера.\n\nСпочатку налаштуйте WoL на віддаленому комп’ютері, а потім увімкніть його в AVNC.\nПісля ввімкнення WoL магічний пакет буде автоматично надсилається перед підключенням до цього сервера.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN можна використовувати для віддаленого ввімкнення комп’ютера.\n\nСпочатку налаштуйте WoL на віддаленому комп’ютері, а потім увімкніть його в FastVNC.\nПісля ввімкнення WoL магічний пакет буде автоматично надсилається перед підключенням до цього сервера.</string>
     <string name="pref_show_gesture_style_toggle">Показати перемикач стилю жестів</string>
     <string name="title_forget">Забути</string>
     <string name="hint_wol_mac">MAC-адреса</string>

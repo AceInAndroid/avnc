@@ -123,7 +123,7 @@
     <string name="title_change">更改</string>
     <string name="title_open_source_libraries">开源库</string>
     <string name="title_report_bug">报告问题</string>
-    <string name="msg_about_app">一个快速且安全的 VNC 客户端。远程查看和控制任何运行着 VNC 服务器的设备。 \n \n \nAVNC 是一个开源和非盈利版权软件 — 在众多贡献者的帮助下制作。</string>
+    <string name="msg_about_app">一个快速且安全的 VNC 客户端。远程查看和控制任何运行着 VNC 服务器的设备。 \n \n \nFastVNC 是采用 copyleft 开源许可证的软件 — 在众多贡献者的帮助下制作。</string>
     <string name="msg_pip_not_supported">此设备不支持</string>
     <string name="tip_empty_server_list">服务器列表为空。 \n单击“<b>+</b>”添加服务器，或 \n使用顶部的地址栏直接连接。</string>
     <string name="desc_discovered_list">自动发现的服务器的列表</string>
@@ -202,7 +202,7 @@
     <string name="hint_send_text_to_server">发送文本到服务器</string>
     <string name="title_enable_wol">局域网唤醒</string>
     <string name="hint_wol_mac">MAC 地址</string>
-    <string name="msg_wake_on_lan_help">局域网唤醒（Wake-on-LAN） 可用于远程启动一台计算机。 \n \n首先，在远程计算机上配置 WoL，然后在 AVNC 中启用它。 \n启用后，在连接到此服务器前，将自动发送 WoL 魔法数据包。</string>
+    <string name="msg_wake_on_lan_help">局域网唤醒（Wake-on-LAN） 可用于远程启动一台计算机。 \n \n首先，在远程计算机上配置 WoL，然后在 FastVNC 中启用它。 \n启用后，在连接到此服务器前，将自动发送 WoL 魔法数据包。</string>
     <string name="title_load_defaults">加载默认</string>
     <string name="msg_saved">已保存</string>
     <string name="pref_customize_virtual_keys">自定义按键</string>

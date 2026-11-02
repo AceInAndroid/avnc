@@ -1,0 +1,20 @@
+<resources>
+    <string name="clipboard_title">Clipboard</string>
+    <string name="clipboard_master">Clipboard sharing</string>
+    <string name="clipboard_auto_send">Automatically send Android text</string>
+    <string name="clipboard_auto_send_summary">While connected and FastVNC is in the foreground, send text when it changes. Return to FastVNC after copying in another app. Paste on the remote computer yourself.</string>
+    <string name="clipboard_help">Share plain text with the remote clipboard. Recent Android text stays on this device: up to 20 items. Sensitive text is never saved to history.</string>
+    <string name="clipboard_send_current">Send current Android clipboard</string>
+    <string name="clipboard_recent">Recent text</string>
+    <string name="clipboard_clear">Clear history</string>
+    <string name="clipboard_clear_confirm">Clear all recent clipboard text?</string>
+    <string name="clipboard_empty">No recent text</string>
+    <string name="clipboard_send">Send</string>
+    <string name="clipboard_copy">Copy</string>
+    <string name="clipboard_delete">Delete</string>
+    <string name="clipboard_ready">Ready to send. Use Paste on the remote computer after sending.</string>
+    <string name="clipboard_cannot_send">Sending requires clipboard sharing, an active connection and input enabled.</string>
+    <string name="clipboard_no_text">No plain text available, or text exceeds 64 KiB.</string>
+    <string name="clipboard_sent">Text queued for the remote clipboard. Paste on the remote computer.</string>
+    <string name="clipboard_unavailable">Clipboard unavailable. Try again while FastVNC is open.</string>
+</resources>

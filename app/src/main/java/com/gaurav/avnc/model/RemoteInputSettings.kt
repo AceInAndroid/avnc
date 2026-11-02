@@ -75,8 +75,8 @@ data class RemoteInputConfig(
     fun apply(overrides: RemoteInputOverrides): RemoteInputConfig {
         fun speed(value: Float?, fallback: Float, max: Float = 3f) = value?.takeIf { it.isFinite() }?.coerceIn(.25f, max) ?: fallback
         return copy(pointerSpeed = speed(overrides.pointerSpeed, pointerSpeed),
-                scrollSpeed = speed(overrides.scrollSpeed, scrollSpeed, 6f),
-                horizontalSpeed = overrides.horizontalSpeed?.takeIf { it.isFinite() }?.coerceIn(.25f, 6f) ?: horizontalSpeed,
+                scrollSpeed = speed(overrides.scrollSpeed, scrollSpeed, 10f),
+                horizontalSpeed = overrides.horizontalSpeed?.takeIf { it.isFinite() }?.coerceIn(.25f, 10f) ?: horizontalSpeed,
                 invertVertical = overrides.invertVertical ?: invertVertical,
                 invertHorizontal = overrides.invertHorizontal ?: invertHorizontal,
                 acceleration = overrides.acceleration ?: acceleration,

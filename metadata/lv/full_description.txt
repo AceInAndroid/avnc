@@ -1,4 +1,4 @@
-AVNC - atvērtā pirmkoda Android VNC klients. Tas ļauj attālināti vadīt jebkuru ierīci, kurā darbojas VNC serveris.
+FastVNC - atvērtā pirmkoda Android VNC klients. Tas ļauj attālināti vadīt jebkuru ierīci, kurā darbojas VNC serveris.
 
 Funkcijas:
 

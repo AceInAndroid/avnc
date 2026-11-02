@@ -93,12 +93,13 @@ class ControlUiTest : VncSessionTest() {
         assertTrue(vncSession.server.receivedPointerEvents.isEmpty())
     }
 
-    @Test fun alphabetUsesLargeSpaceAndDigitsLiveOnSeparatePage() {
+    @Test fun physicalKeyboardIncludesNumbersAndKeepsSymbolsAndNavigationAccessible() {
         vncSession.run {
             vncSession.onActivity {
                 it.showKeyboard()
                 val keyboard = it.computerKeyboard.container
-                assertNull(keyboard.findViewWithTag<View>("keyboard_key_${KeyEvent.KEYCODE_1}"))
+                assertNotNull(keyboard.findViewWithTag<View>("keyboard_number_row"))
+                keyboard.findViewWithTag<View>("keyboard_key_${KeyEvent.KEYCODE_1}").performClick()
                 keyboard.findViewWithTag<View>("keyboard_key_${KeyEvent.KEYCODE_A}").performClick()
                 keyboard.findViewWithTag<View>("keyboard_key_${KeyEvent.KEYCODE_SPACE}").performClick()
                 keyboard.findViewWithTag<View>("keyboard_page_symbols").performClick()
@@ -107,7 +108,7 @@ class ControlUiTest : VncSessionTest() {
                 keyboard.findViewWithTag<View>("keyboard_key_${KeyEvent.KEYCODE_F12}").performClick()
             }
         }
-        assertEquals(listOf('a'.code, ' '.code, '1'.code, XKeySym.XK_F12), vncSession.server.receivedKeyDowns)
+        assertEquals(listOf('1'.code, 'a'.code, ' '.code, '1'.code, XKeySym.XK_F12), vncSession.server.receivedKeyDowns)
     }
 
     @Test fun landscapeDockReusesPadAndRestoresSavedFloatingPosition() {

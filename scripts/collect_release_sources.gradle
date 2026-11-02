@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// ./gradlew -I scripts/collect_release_sources.gradle :app:collectReleaseSources
+import groovy.json.JsonOutput
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.project(':app')
+    app.tasks.register('collectReleaseSources') {
+        doLast {
+            def output = new File(app.rootProject.buildDir, 'release-dependency-sources')
+            app.delete(output)
+            output.mkdirs()
+            def components = app.configurations.releaseRuntimeClasspath.incoming.artifacts.artifacts
+                    .collect { it.id.componentIdentifier }
+                    .findAll { it instanceof ModuleComponentIdentifier }
+                    .unique { "${it.group}:${it.module}:${it.version}" }
+                    .sort { "${it.group}:${it.module}:${it.version}" }
+            def requested = components.collect { id ->
+                app.dependencies.create("${id.group}:${id.module}:${id.version}:sources@jar") {
+                    transitive = false
+                }
+            }
+            def resolved = app.configurations.detachedConfiguration(*requested)
+                    .resolvedConfiguration.lenientConfiguration
+            def artifacts = resolved.artifacts
+            def manifest = components.collect { id ->
+                def source = artifacts.find { it.moduleVersion.id.group == id.group &&
+                        it.moduleVersion.id.name == id.module && it.moduleVersion.id.version == id.version }
+                if (source == null) {
+                    throw new GradleException("Missing dependency sources: ${id.group}:${id.module}:${id.version}")
+                }
+                def name = "${id.group}-${id.module}-${id.version}-sources.jar"
+                app.copy { from(source.file); into(output); rename { name } }
+                [coordinate: "${id.group}:${id.module}:${id.version}", source: name]
+            }
+            new File(output, 'dependencies.json').text = JsonOutput.prettyPrint(JsonOutput.toJson(manifest)) + '\n'
+            logger.lifecycle("Collected ${manifest.size()} runtime dependency source archives in ${output}")
+        }
+    }
+}

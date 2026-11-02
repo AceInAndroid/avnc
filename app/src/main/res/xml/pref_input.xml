@@ -23,8 +23,31 @@
 
     <Preference
         app:key="restore_recommended_input"
-        app:title="@string/pref_restore_input"
-        app:summary="@string/pref_restore_input_summary" />
+        app:title="@string/settings_restore_group"
+        app:summary="@string/settings_restore_group_summary" />
+
+    <PreferenceCategory
+        app:icon="@drawable/ic_control_touchpad"
+        app:title="@string/touchpad_appearance_title">
+
+        <SeekBarPreference
+            android:max="150"
+            app:min="75"
+            app:defaultValue="100"
+            app:key="touchpad_size"
+            app:showSeekBarValue="true"
+            app:title="@string/touchpad_size_title"
+            app:summary="@string/touchpad_size_summary" />
+
+        <SeekBarPreference
+            android:max="100"
+            app:min="30"
+            app:defaultValue="100"
+            app:key="touchpad_opacity"
+            app:showSeekBarValue="true"
+            app:title="@string/touchpad_opacity_title"
+            app:summary="@string/touchpad_opacity_summary" />
+    </PreferenceCategory>
 
     <PreferenceCategory
         app:icon="@drawable/ic_gesture"
@@ -123,6 +146,7 @@
             android:max="15"
             app:defaultValue="10"
             app:key="gesture_swipe_sensitivity"
+            app:showSeekBarValue="true"
             app:min="5"
             app:title="@string/remote_input_pan_sensitivity" />
 
@@ -187,6 +211,7 @@
             app:useSimpleSummaryProvider="true" />
 
         <Preference
+            app:key="settings_virtual_key_layout"
             app:fragment="com.gaurav.avnc.ui.prefs.VirtualKeysEditor"
             app:title="@string/pref_customize_virtual_keys" />
     </PreferenceCategory>

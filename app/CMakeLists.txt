@@ -57,20 +57,27 @@ set(WITH_LIBSSH2 OFF CACHE BOOL "Find LibSSH" FORCE)
 
 # Keep upstream's submodule clean. Apply our tracked protocol changes to a fresh
 # build-local copy on configure, identically for every ABI and clean checkout.
-set(AVNC_LIBVNC_PATCH ${PROJECT_SOURCE_DIR}/src/main/cpp/patches/libvncclient-session.patch)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AVNC_LIBVNC_PATCH})
+set(AVNC_LIBVNC_PATCHES
+    ${PROJECT_SOURCE_DIR}/src/main/cpp/patches/libvncclient-session.patch
+    ${PROJECT_SOURCE_DIR}/src/main/cpp/patches/libvncclient-connection.patch)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AVNC_LIBVNC_PATCHES})
 file(REMOVE_RECURSE ${AVNC_LIBVNC_SRC_DIR})
 file(MAKE_DIRECTORY ${AVNC_LIBVNC_SRC_DIR})
 file(COPY ${AVNC_EXTERN_DIR}/libvncserver/ DESTINATION ${AVNC_LIBVNC_SRC_DIR}
      PATTERN ".git" EXCLUDE)
 find_package(Git REQUIRED)
-execute_process(COMMAND ${GIT_EXECUTABLE} apply ${AVNC_LIBVNC_PATCH}
-                WORKING_DIRECTORY ${AVNC_LIBVNC_SRC_DIR}
-                RESULT_VARIABLE AVNC_LIBVNC_PATCH_RESULT
-                ERROR_VARIABLE AVNC_LIBVNC_PATCH_ERROR)
-if (NOT AVNC_LIBVNC_PATCH_RESULT EQUAL 0)
-    message(FATAL_ERROR "Cannot apply LibVNCClient session patch: ${AVNC_LIBVNC_PATCH_ERROR}")
-endif ()
+foreach(AVNC_LIBVNC_PATCH IN LISTS AVNC_LIBVNC_PATCHES)
+    # The copy is nested inside AVNC's checkout. Stop Git discovering the parent
+    # repository, where diff --git paths would otherwise be silently skipped.
+    execute_process(COMMAND ${CMAKE_COMMAND} -E env "GIT_CEILING_DIRECTORIES=${CMAKE_BINARY_DIR}"
+                            ${GIT_EXECUTABLE} apply ${AVNC_LIBVNC_PATCH}
+                    WORKING_DIRECTORY ${AVNC_LIBVNC_SRC_DIR}
+                    RESULT_VARIABLE AVNC_LIBVNC_PATCH_RESULT
+                    ERROR_VARIABLE AVNC_LIBVNC_PATCH_ERROR)
+    if (NOT AVNC_LIBVNC_PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "Cannot apply ${AVNC_LIBVNC_PATCH}: ${AVNC_LIBVNC_PATCH_ERROR}")
+    endif ()
+endforeach()
 
 add_subdirectory(${AVNC_LIBVNC_SRC_DIR} ${AVNC_LIBVNC_BUILD_DIR})  # (source dir, build dir)
 

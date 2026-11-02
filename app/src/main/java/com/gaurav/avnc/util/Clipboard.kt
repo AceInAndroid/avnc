@@ -94,3 +94,23 @@ fun ComponentActivity.setClipboardTextWithNotification(text: String) {
             Snackbar.make(snackHost, "Unable to copy text", Snackbar.LENGTH_SHORT).show()
     }
 }
+/** Snapshot text and its sensitivity in the same clipboard read. URI and styled coercion are excluded. */
+data class ClipboardText(val text: String, val sensitive: Boolean)
+
+suspend fun getClipboardTextSnapshot(context: Context): ClipboardText? {
+    val manager = withContext(Dispatchers.Main.immediate) { getClipboard(context) }
+    return try {
+        withContext(Dispatchers.IO) {
+            val clip = manager.primaryClip ?: return@withContext null
+            val text = clip.getItemAt(0)?.text?.toString() ?: return@withContext null
+            val sensitive = android.os.Build.VERSION.SDK_INT >= 24 &&
+                    clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true
+            ClipboardText(text, sensitive)
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Log.e("ClipboardUtil", "Could not read clipboard snapshot", error)
+        null
+    }
+}

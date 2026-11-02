@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.gaurav.avnc.R
 import com.gaurav.avnc.CleanPrefsRule
 import com.gaurav.avnc.VncSessionTest
 import com.gaurav.avnc.util.isKeyboardVisible
@@ -58,6 +59,53 @@ class PlatformKeyboardTest : VncSessionTest() {
         }
         assertEquals(listOf(XKeySym.XK_Super_L to true, XKeySym.XK_Super_L to false),
                 vncSession.server.receivedKeySyms)
+    }
+
+    @Test fun mainKeyboardHeaderUsesOrderedTabsAndExplicitCloseOnBothPlatforms() {
+        vncSession.run {
+            for (platformValue in listOf("mac", "windows")) {
+                platform(platformValue)
+                vncSession.onActivity { activity ->
+                    activity.showKeyboard()
+                    val keyboard = activity.computerKeyboard.container
+                    val header = checkNotNull(keyboard.findViewWithTag<ViewGroup>("keyboard_header"))
+                    fun descendants(view: View): List<View> = listOf(view) +
+                            if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+                    assertEquals(listOf("input_tab_keyboard", "input_tab_touchpad", "input_tab_shortcuts", "input_more"),
+                            descendants(header).mapNotNull { it.tag?.toString() }.filter { it.startsWith("input_") })
+                    assertTrue(checkNotNull(header.findViewWithTag<View>("input_tab_keyboard")).isSelected)
+                    assertNotNull(header.findViewWithTag<View>("keyboard_close"))
+                    assertNull(keyboard.findViewById<View>(R.id.mac_controls_row))
+                    assertFalse(descendants(header).any { it.tag?.toString()?.startsWith("keyboard_key_") == true })
+                }
+            }
+        }
+        assertTrue(vncSession.server.receivedKeySyms.isEmpty())
+    }
+
+    @Test fun desktopBottomRowUsesPlatformModifierOrderAndReturnLabel() {
+        vncSession.run {
+            for (platformValue in listOf("mac", "windows")) {
+                platform(platformValue)
+                vncSession.onActivity { activity ->
+                    activity.showKeyboard()
+                    val keyboard = activity.computerKeyboard.container
+                    val bottom = keyboard.findViewWithTag<ViewGroup>("keyboard_modifier_row")
+                    val expected = if (platformValue == "mac")
+                        listOf(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_META_LEFT)
+                    else listOf(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_META_LEFT, KeyEvent.KEYCODE_ALT_LEFT)
+                    assertEquals(expected.map { key(it) }, (0..2).map { bottom.getChildAt(it).tag })
+                    val enter = keyboard.findViewWithTag<TextView>(key(KeyEvent.KEYCODE_ENTER))
+                    assertEquals(if (platformValue == "mac") "return" else "Enter", enter.text.toString())
+                    if (platformValue == "windows") {
+                        assertEquals("Ctrl", (bottom.getChildAt(0) as TextView).text.toString())
+                        assertEquals("Win", (bottom.getChildAt(1) as TextView).text.toString())
+                        assertEquals("Alt", (bottom.getChildAt(2) as TextView).text.toString())
+                    }
+                }
+            }
+        }
+        assertTrue(vncSession.server.receivedKeySyms.isEmpty())
     }
 
     @Test fun platformChangesPreserveVisibilityAndFunctionPageWithoutOpeningIme() {

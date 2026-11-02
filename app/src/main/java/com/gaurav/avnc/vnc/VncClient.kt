@@ -74,6 +74,8 @@ class VncClient(private val observer: Observer) {
         private set
 
     private var destroyed = false
+    private val nativeLifetimeLock = Any()
+    private val cancelled = AtomicBoolean(false)
 
     /**
      * Lock protecting access to [connected] & [destroyed] state.
@@ -149,6 +151,7 @@ class VncClient(private val observer: Observer) {
      */
     fun connect(host: String, port: Int) {
         stateLock.read {
+            checkActive()
             check(!connected) { "Already connected" }
             check(!destroyed) { "Client has been destroyed" }
 
@@ -156,25 +159,50 @@ class VncClient(private val observer: Observer) {
                 throw IOException(nativeGetLastErrorStr())
         }
         stateLock.write {
-            if (!destroyed)
+            synchronized(nativeLifetimeLock) {
+                checkActive()
+                check(!destroyed) { "Client has been destroyed" }
                 connected = true
+            }
         }
+    }
+
+    /** Cancels I/O without waiting for the state lock held by that I/O. */
+    fun cancel() = synchronized(nativeLifetimeLock) {
+        cancelled.set(true)
+        connected = false
+        if (!destroyed) nativeCancel(nativePtr)
+    }
+
+    internal fun configureTimeouts(connectSeconds: Int = 10, readSeconds: Int = 15, writeSeconds: Int = 15) {
+        require(connectSeconds >= 0 && readSeconds >= 0 && writeSeconds >= 0)
+        stateLock.write {
+            check(!connected && !destroyed && !cancelled.get())
+            nativeConfigureTimeouts(nativePtr, connectSeconds, readSeconds, writeSeconds)
+        }
+    }
+
+    private fun checkActive() {
+        if (cancelled.get()) throw IOException("Connection cancelled")
+    }
+
+    private fun checkSent(success: Boolean) {
+        if (!success) throw IOException(nativeGetLastErrorStr().ifBlank { "Failed to send data to remote server" })
     }
 
     /**
      * Waits for incoming server message, parses it and then invokes appropriate callbacks.
      */
     fun processServerMessage() {
-        stateLock.read {
+        val error = stateLock.read {
             if (connected && nativeProcessServerMessage(nativePtr))
                 return
+            IOException(if (cancelled.get()) "Connection cancelled" else nativeGetLastErrorStr()
+                    .ifBlank { "Failed to read data from remote server" })
         }
-
-        // Either not connected or an error occurred when processing message
-        stateLock.write {
-            connected = false
-            throw IOException(nativeGetLastErrorStr())
-        }
+        // Unblock a concurrent sender before anyone waits for exclusive cleanup access.
+        cancel()
+        throw error
     }
 
     /**
@@ -200,7 +228,7 @@ class VncClient(private val observer: Observer) {
      * @param isDown    true for key down, false for key up
      */
     fun sendKeyEvent(keySym: Int, xtCode: Int, isDown: Boolean) = ifConnectedAndInteractive {
-        nativeSendKeyEvent(nativePtr, keySym, xtCode, isDown)
+        checkSent(nativeSendKeyEvent(nativePtr, keySym, xtCode, isDown))
     }
 
     /**
@@ -211,7 +239,7 @@ class VncClient(private val observer: Observer) {
      * @param mask Button mask to identify which button was pressed.
      */
     fun sendPointerEvent(x: Int, y: Int, mask: Int) = ifConnectedAndInteractive {
-        nativeSendPointerEvent(nativePtr, x, y, mask)
+        checkSent(nativeSendPointerEvent(nativePtr, x, y, mask))
     }
 
     /**
@@ -244,8 +272,8 @@ class VncClient(private val observer: Observer) {
                 nativeSendCutText(nativePtr, text.toByteArray(StandardCharsets.UTF_8), true)
             else
                 nativeSendCutText(nativePtr, text.toByteArray(StandardCharsets.ISO_8859_1), false)
-            if (sent)
-                lastCutText = text
+            checkSent(sent)
+            lastCutText = text
         }
     }
 
@@ -256,7 +284,7 @@ class VncClient(private val observer: Observer) {
      */
     fun setDesktopSize(width: Int, height: Int) = ifConnected {
         if (width > 0 && height > 0)
-            nativeSetDesktopSize(nativePtr, width, height)
+            checkSent(nativeSetDesktopSize(nativePtr, width, height))
     }
 
     /** Selects a framebuffer region without changing remote display configuration.
@@ -285,7 +313,7 @@ class VncClient(private val observer: Observer) {
      */
     fun refreshFrameBuffer() = ifConnected {
         if (!frameBufferUpdatesPaused.get())
-            nativeRefreshFrameBuffer(nativePtr)
+            checkSent(nativeRefreshFrameBuffer(nativePtr))
     }
 
     /**
@@ -324,11 +352,14 @@ class VncClient(private val observer: Observer) {
      * DO NOT use this client after [cleanup].
      */
     fun cleanup() {
+        cancel()
         stateLock.write {
-            if (!destroyed) {
-                nativeCleanup(nativePtr)
-                connected = false
-                destroyed = true
+            synchronized(nativeLifetimeLock) {
+                if (!destroyed) {
+                    nativeCleanup(nativePtr)
+                    connected = false
+                    destroyed = true
+                }
             }
         }
     }
@@ -371,6 +402,8 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
+    private external fun nativeCancel(clientPtr: Long)
+    private external fun nativeConfigureTimeouts(clientPtr: Long, connectSeconds: Int, readSeconds: Int, writeSeconds: Int)
     private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)

@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.activityViewModels
+import com.gaurav.avnc.ui.common.GlassStyle
 import com.gaurav.avnc.R
 import com.gaurav.avnc.viewmodel.VncViewModel
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -38,6 +39,7 @@ class ConfirmationDialog : DialogFragment() {
         check(data != null) { "Confirmation dialog started without message!" }
 
         return MaterialAlertDialogBuilder(requireContext())
+                .setBackground(GlassStyle(requireContext()).rounded())
                 .setTitle(data.first)
                 .setMessage(data.second)
                 .setPositiveButton(R.string.title_continue) { _, _ -> viewModel.confirmationRequest.offerResponse(true) }
@@ -53,6 +55,6 @@ class ConfirmationDialog : DialogFragment() {
 
     private fun doCancel() {
         viewModel.confirmationRequest.offerResponse(false)
-        requireActivity().finish()
+        (requireActivity() as VncActivity).disconnectSession()
     }
 }

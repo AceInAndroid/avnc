@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_transfer_title">Send file</string>
+    <string name="file_transfer_hint">Files use a separate SSH/SFTP connection. On your Mac, enable System Settings → General → Sharing → Remote Login and allow this account. No helper app is needed. Entered passwords are used for this transfer only.</string>
+    <string name="file_transfer_destination">Destination: the SSH account’s Downloads folder. Existing files are kept; duplicate names receive a number.</string>
+    <string name="file_transfer_host">SSH host</string>
+    <string name="file_transfer_port">SSH port</string>
+    <string name="file_transfer_user">Mac account name</string>
+    <string name="file_transfer_password">SSH password</string>
+    <string name="file_transfer_key_password">Private key passphrase (if encrypted)</string>
+    <string name="file_transfer_use_key">Use this connection’s saved SSH key</string>
+    <string name="file_transfer_choose">Choose file</string>
+    <string name="file_transfer_required">Required</string>
+    <string name="file_transfer_invalid_port">Enter a port from 1 to 65535</string>
+    <string name="file_transfer_unavailable">Connect with remote input enabled to send files.</string>
+    <string name="file_transfer_no_picker">No file picker is available.</string>
+    <string name="file_transfer_preparing">Preparing file…</string>
+    <string name="file_transfer_connecting">Connecting securely…</string>
+    <string name="file_transfer_progress">%1$s of %2$s sent</string>
+    <string name="file_transfer_cannot_read">Cannot open the selected file.</string>
+    <string name="file_transfer_complete">File sent</string>
+    <string name="file_transfer_saved">Saved to %1$s</string>
+    <string name="file_transfer_failed">File could not be sent</string>
+    <string name="file_transfer_retry">Retry</string>
+    <string name="file_transfer_finishing">Finishing the previous transfer…</string>
+    <string name="file_transfer_timeout">The transfer timed out. Please retry.</string>
+</resources>

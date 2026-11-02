@@ -1,4 +1,4 @@
-AVNC, Android için açık kaynaklı bir VNC istemcisidir. Bir VNC sunucusu çalıştıran herhangi bir aygıtı uzaktan denetlemenizi sağlar.
+FastVNC, Android için açık kaynaklı bir VNC istemcisidir. Bir VNC sunucusu çalıştıran herhangi bir aygıtı uzaktan denetlemenizi sağlar.
 
 Özellikleri:
 

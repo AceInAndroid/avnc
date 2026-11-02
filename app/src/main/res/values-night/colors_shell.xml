@@ -1,0 +1,12 @@
+<resources>
+    <color name="shell_background">#101115</color>
+    <color name="shell_surface">#202228</color>
+    <color name="shell_glass">#F0272930</color>
+    <color name="shell_ink">#F5F6FA</color>
+    <color name="shell_secondary">#B2B7C3</color>
+    <color name="shell_line">#3B3E49</color>
+    <color name="shell_blue">#6AABFF</color>
+    <color name="shell_selected">#253C5E</color>
+    <color name="shell_destructive">#FF8C94</color>
+    <color name="shell_action_fill">#0063D8</color>
+</resources>

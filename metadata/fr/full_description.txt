@@ -1,4 +1,4 @@
-AVNC est un client VNC open source pour Android. Il vous permet de contrôler à distance tout appareil exécutant un serveur VNC.
+FastVNC est un client VNC open source pour Android. Il vous permet de contrôler à distance tout appareil exécutant un serveur VNC.
 
 Caractéristiques :
 

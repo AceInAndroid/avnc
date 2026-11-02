@@ -74,6 +74,8 @@ class AppPreferences(context: Context) {
         var touchpadCollapsed by BooleanPref("touchpad_collapsed", false)
         var touchpadX by FloatPref("touchpad_x", 1f)
         var touchpadY by FloatPref("touchpad_y", 1f)
+        val touchpadSizePercent get() = prefs.getInt("touchpad_size", 100).coerceIn(75, 150)
+        val touchpadOpacityPercent get() = prefs.getInt("touchpad_opacity", 100).coerceIn(30, 100)
 
         val vkOpenWithKeyboard; get() = prefs.getBoolean("vk_open_with_keyboard", false)
         val vkShowAll; get() = prefs.getBoolean("vk_show_all", false)

@@ -9,25 +9,66 @@
 package com.gaurav.avnc.viewmodel
 
 import android.app.Application
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MediatorLiveData
+import androidx.lifecycle.map
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.switchMap
 import com.gaurav.avnc.model.ServerProfile
+import com.gaurav.avnc.model.db.ServerProfileDao
 import com.gaurav.avnc.util.LiveEvent
 import com.gaurav.avnc.viewmodel.service.Discovery
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 
-class HomeViewModel(app: Application) : BaseViewModel(app) {
+data class ProfilesUiState(val loading: Boolean = false,
+                           val profiles: List<ServerProfile> = emptyList(),
+                           val error: String? = null)
+
+class HomeViewModel @JvmOverloads constructor(app: Application,
+        private val profileDaoOverride: ServerProfileDao? = null) : BaseViewModel(app) {
+    private val profilesDao get() = profileDaoOverride ?: serverProfileDao
+    private var profilesJob: Job? = null
+    private var sortProfiles = false
+    private val mutableProfilesState = MediatorLiveData(ProfilesUiState(loading = true)).apply {
+        addSource(pref.ui.sortServerList) { sorted ->
+            sortProfiles = sorted
+            observeProfiles()
+        }
+    }
+    val profilesState: LiveData<ProfilesUiState> = mutableProfilesState
+
+    fun retryProfiles() = observeProfiles()
+
+    private fun observeProfiles() {
+        profilesJob?.cancel()
+        mutableProfilesState.value = ProfilesUiState(loading = true,
+                profiles = mutableProfilesState.value?.profiles.orEmpty())
+        profilesJob = launchMain {
+            flow {
+                emitAll(if (sortProfiles) profilesDao.observeSortedList() else profilesDao.observeList())
+            }.catch { error ->
+                if (error is CancellationException) throw error
+                mutableProfilesState.value = ProfilesUiState(
+                        profiles = mutableProfilesState.value?.profiles.orEmpty(),
+                        error = error.localizedMessage ?: error.javaClass.simpleName)
+            }.collect { profiles ->
+                mutableProfilesState.value = ProfilesUiState(profiles = profiles)
+            }
+        }
+    }
 
     /**
      * [ServerProfile]s stored in database.
      * Depending on the user pref, this list may be sorted by server name.
      */
-    val serverProfiles by lazy {
-        pref.ui.sortServerList.switchMap {
-            if (it) serverProfileDao.getSortedLiveList()
-            else serverProfileDao.getLiveList()
-        }
-    }
+    val serverProfiles: LiveData<List<ServerProfile>> = profilesState.map { it.profiles }
 
     /**
      * Used to find new servers.
@@ -57,13 +98,19 @@ class HomeViewModel(app: Application) : BaseViewModel(app) {
      */
     val profileDeletedEvent = LiveEvent<ServerProfile>()
 
+    /** Failure of a user-requested save, delete or undo; no success event is emitted. */
+    val operationError = LiveEvent<Throwable>()
+
     /**
      * Starts new connection to given profile.
      */
     fun startConnection(profile: ServerProfile) = newConnectionEvent.fire(profile)
 
     fun maybeConnectOnAppStart() = launchMain {
-        serverProfileDao.getConnectableOnAppStart().firstOrNull()?.let { startConnection(it) }
+        try {
+            profilesDao.getConnectableOnAppStart().firstOrNull()?.let { startConnection(it) }
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) { operationError.fire(error) }
     }
 
     /**************************************************************************
@@ -72,13 +119,16 @@ class HomeViewModel(app: Application) : BaseViewModel(app) {
      * To save battery, Discovery is stopped when HomeActivity is in background.
      **************************************************************************/
     private var autoStopped = false
+    private var discoveryRequested = false
 
     fun startDiscovery() {
+        discoveryRequested = true
         autoStopped = false
         discovery.start(app)
     }
 
     fun stopDiscovery() {
+        discoveryRequested = false
         autoStopped = false
         discovery.stop()
     }
@@ -89,10 +139,11 @@ class HomeViewModel(app: Application) : BaseViewModel(app) {
     }
 
     fun autoStopDiscovery() {
-        if (discovery.isRunning.value == true) {
-            stopDiscovery()
-            autoStopped = true
-        }
+        val shouldResume = discoveryRequested || discovery.isRunning.value == true
+        // Stop even before the asynchronous STARTING state reaches LiveData.
+        discovery.stop()
+        discoveryRequested = false
+        autoStopped = shouldResume
     }
 
 
@@ -122,14 +173,31 @@ class HomeViewModel(app: Application) : BaseViewModel(app) {
      * These operations are asynchronous.
      **************************************************************************/
 
+    /** A successful save has a stable Room ID before the editor closes or UI highlights it. */
+    suspend fun persistProfile(profile: ServerProfile): ServerProfile {
+        val id = profilesDao.save(profile)
+        withContext(Dispatchers.Main.immediate) {
+            if (profile.ID == 0L) {
+                check(id > 0L) { "Room did not return an ID for the new profile" }
+                profile.ID = id
+            }
+            profileSavedEvent.fire(profile)
+        }
+        return profile
+    }
+
     fun saveProfile(profile: ServerProfile) = launchMain {
-        serverProfileDao.save(profile)
-        profileSavedEvent.fire(profile)
+        try { persistProfile(profile) }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { operationError.fire(error) }
     }
 
     fun deleteProfile(profile: ServerProfile) = launchMain {
-        serverProfileDao.delete(profile)
-        profileDeletedEvent.fire(profile)
+        try {
+            profilesDao.delete(profile)
+            profileDeletedEvent.fire(profile)
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) { operationError.fire(error) }
     }
 
     /**************************************************************************

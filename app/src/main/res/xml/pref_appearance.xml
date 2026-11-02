@@ -7,7 +7,7 @@
   -->
 
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
-    app:title="@string/pref_ui">
+    app:title="@string/settings_appearance">
 
     <ListPreference
         app:defaultValue="system"
@@ -32,4 +32,6 @@
         app:key="prefer_advanced_editor"
         app:title="@string/pref_prefer_advanced_editor" />
 
+    <Preference app:key="settings_viewer" app:title="@string/pref_viewer" app:summary="@string/pref_viewer_summary"
+        app:fragment="com.gaurav.avnc.ui.prefs.PrefsActivity$Viewer" />
 </PreferenceScreen>

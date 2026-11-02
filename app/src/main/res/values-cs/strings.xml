@@ -54,7 +54,7 @@
     <string name="hint_ssh_host">SSH hostitel</string>
     <string name="hint_ssh_port">SSH port</string>
     <string name="hint_key_password">Klíč</string>
-    <string name="msg_about_app">Rychlý a bezpečný VNC klient. Vzdáleně zobrazte a ovládejte libovolné zařízení s běžícím serverem VNC.\n\n\nAVNC je open source a copyleft program — vyrobený s pomocí mnoha přispěvatelů.</string>
+    <string name="msg_about_app">Rychlý a bezpečný VNC klient. Vzdáleně zobrazte a ovládejte libovolné zařízení s běžícím serverem VNC.\n\n\nFastVNC je open source a copyleft program — vyrobený s pomocí mnoha přispěvatelů.</string>
     <string name="msg_server_profile_added">Server přidán</string>
     <string name="msg_server_profile_deleted">Server smazán</string>
     <string name="msg_zoom_reset_default">Zoom do výchozího nastavení</string>
@@ -110,7 +110,7 @@
     <string name="msg_invalid_key_file">Neplatný soubor osobního klíče</string>
     <string name="pref_tools_summary">Import / Export, ladění</string>
     <string name="pref_tools">Nástroje</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN lze použít ke vzdálenému zapnutí počítače.\n\nNejprve nakonfigurujte WoL na vzdáleném počítači a poté jej povolte v AVNC.\nPoté, co je povoleno, WoL kouzelný paket bude automaticky odeslán před připojením k tomuto serveru.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN lze použít ke vzdálenému zapnutí počítače.\n\nNejprve nakonfigurujte WoL na vzdáleném počítači a poté jej povolte v FastVNC.\nPoté, co je povoleno, WoL kouzelný paket bude automaticky odeslán před připojením k tomuto serveru.</string>
     <string name="tip_session_end">Chcete-li ukončit relaci, klepněte na tlačítko Zpět, stejně jako byste se vráceli z přehrávání videa.</string>
     <string name="tip_toolbar_usage">Posunutím od okraje otevřete panel nástrojů. Použijte jej k otevření klávesnice, změnu stylu gesta, nebo obnovení zoomu.</string>
     <string name="tip_discovery">Objevování může automaticky najít podporované servery\nběžící na vaší síti.</string>

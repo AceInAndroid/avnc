@@ -37,14 +37,14 @@
     <string name="msg_about_app">Un client pour VNC rapide et sécurisé. Visualisez et contrôlez à distance tout appareil exécutant un serveur VNC.
 \n
 \n
-\nAVNC est un logiciel open source et copyleft - réalisé avec l\'aide de nombreux contributeurs.</string>
+\nFastVNC est un logiciel open source et copyleft - réalisé avec l\'aide de nombreux contributeurs.</string>
     <string name="msg_server_profile_added">Serveur ajouté</string>
     <string name="msg_loading">Chargement…</string>
     <string name="msg_imported">Importé</string>
     <string name="msg_exported">Exporté</string>
     <string name="msg_export_auth_required">Authentifiez-vous pour exporter des serveurs</string>
     <string name="err_import_too_large">Le fichier d\'import est trop gros (limite : 1 Mio).</string>
-    <string name="err_invalid_qr_code">Ce n’est pas un code QR AVNC.</string>
+    <string name="err_invalid_qr_code">Ce n’est pas un code QR FastVNC.</string>
     <string name="err_qr_export_failed">Échec de la génération du code QR :</string>
     <string name="err_unsupported_qr_uri">URI non prise en charge ou invalide.</string>
     <string name="msg_confirm_import_uri">Importer depuis l’URI suivante ?</string>
@@ -224,7 +224,7 @@
     <string name="msg_required">Requis</string>
     <string name="msg_invalid_mac_address">Adresse MAC invalide</string>
     <string name="msg_tap_to_select_a_key">Appuyez pour sélectionner une touche :</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN peut être utilisé pour allumer un ordinateur à distance.\n\nTout d’abord, configurez WoL sur l’ordinateur distant, puis activez-le dans AVNC.\nUne fois activé, le paquet magique WoL sera automatiquement envoyé avant de se connecter à ce serveur.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN peut être utilisé pour allumer un ordinateur à distance.\n\nTout d’abord, configurez WoL sur l’ordinateur distant, puis activez-le dans FastVNC.\nUne fois activé, le paquet magique WoL sera automatiquement envoyé avant de se connecter à ce serveur.</string>
     <string name="msg_viewer_tips_label">Quelques conseils pour commencer</string>
     <string name="tip_toolbar_usage">Balayez depuis le bord pour ouvrir la barre d’outils. Utilisez-la pour ouvrir le clavier, changer le style de geste ou réinitialiser le zoom.</string>
     <string name="tip_session_end">Pour mettre fin à une session, appuyez sur le bouton de navigation Retour, comme si vous reveniez d’une vidéo en cours de lecture.</string>

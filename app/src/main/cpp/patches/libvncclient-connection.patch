@@ -1,0 +1,961 @@
+diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
+index c513da9..d30d456 100644
+--- a/include/rfb/rfbclient.h
++++ b/include/rfb/rfbclient.h
+@@ -527,6 +527,10 @@ typedef struct _rfbClient {
+     void (*LockWriteToServer)(struct _rfbClient*);
+     void (*UnlockWriteToServer)(struct _rfbClient*);
+ 
++    /* AVNC: cancellation is queried only; the I/O owner closes the socket. */
++    rfbBool (*IsCancelled)(struct _rfbClient*);
++    unsigned int writeTimeout;
++
+ } rfbClient;
+ 
+ /* cursor.c */
+@@ -830,6 +834,13 @@ extern rfbSocket ConnectClientToTcpAddr6WithTimeout(const char *hostname, int po
+ */
+ extern rfbSocket ConnectClientToUnixSockWithTimeout(const char *sockFile, unsigned int timeout);
+ extern rfbSocket AcceptTcpConnection(rfbSocket listenSock);
++/* AVNC: monotonic stall deadlines and interruptible I/O waits. Zero disables timeout. */
++extern rfbBool rfbClientIoCancelled(rfbClient* client);
++extern uint64_t rfbClientIoDeadline(unsigned int seconds);
++extern int rfbClientWaitForIo(rfbClient* client, rfbSocket sock, rfbBool writing, uint64_t deadline);
++extern rfbSocket ConnectClientToTcpAddrForClient(rfbClient*, unsigned int, int);
++extern rfbSocket ConnectClientToTcpAddr6ForClient(rfbClient*, const char*, int);
++extern rfbSocket ConnectClientToUnixSockForClient(rfbClient*, const char*);
+ extern rfbBool SetNonBlocking(rfbSocket sock);
+ extern rfbBool SetBlocking(rfbSocket sock);
+ extern rfbBool SetDSCP(rfbSocket sock, int dscp);
+diff --git a/src/libvncclient/rfbclient.c b/src/libvncclient/rfbclient.c
+index a00df39..097731c 100644
+--- a/src/libvncclient/rfbclient.c
++++ b/src/libvncclient/rfbclient.c
+@@ -293,6 +293,7 @@ IsUnixSocket(const char *name)
+ rfbBool
+ ConnectToRFBServer(rfbClient* client,const char *hostname, int port)
+ {
++  if (rfbClientIoCancelled(client)) return FALSE;
+   if (client->serverPort==-1) {
+     /* serverHost is a file recorded by vncrec. */
+     const char* magic="vncLog0.0";
+@@ -327,24 +328,27 @@ ConnectToRFBServer(rfbClient* client,const char *hostname, int port)
+ #ifndef WIN32
+   if(IsUnixSocket(hostname))
+     /* serverHost is a UNIX socket. */
+-    client->sock = ConnectClientToUnixSockWithTimeout(hostname, client->connectTimeout);
++    client->sock = ConnectClientToUnixSockForClient(client, hostname);
+   else
+ #endif
+   {
+ #ifdef LIBVNCSERVER_IPv6
+-    client->sock = ConnectClientToTcpAddr6WithTimeout(hostname, port, client->connectTimeout);
++    client->sock = ConnectClientToTcpAddr6ForClient(client, hostname, port);
+ #else
+     unsigned int host;
+ 
+-    /* serverHost is a hostname */
++    /* DNS remains system-controlled; check cancellation on both sides. */
++    if (rfbClientIoCancelled(client)) return FALSE;
+     if (!StringToIPAddr(hostname, &host)) {
++      if (rfbClientIoCancelled(client)) return FALSE;
+       rfbClientLog("Couldn't convert '%s' to host address\n", hostname);
+       return FALSE;
+     }
+-    client->sock = ConnectClientToTcpAddrWithTimeout(host, port, client->connectTimeout);
++    client->sock = ConnectClientToTcpAddrForClient(client, host, port);
+ #endif
+   }
+ 
++  if (rfbClientIoCancelled(client)) return FALSE;
+   if (client->sock == RFB_INVALID_SOCKET) {
+     rfbClientErr("Unable to connect to VNC server\n");
+     return FALSE;
+@@ -366,18 +370,21 @@ rfbBool ConnectToRFBRepeater(rfbClient* client,const char *repeaterHost, int rep
+   int major,minor;
+   char tmphost[250];
+ 
++  if (rfbClientIoCancelled(client)) return FALSE;
+ #ifdef LIBVNCSERVER_IPv6
+-  client->sock = ConnectClientToTcpAddr6WithTimeout(repeaterHost, repeaterPort, client->connectTimeout);
++  client->sock = ConnectClientToTcpAddr6ForClient(client, repeaterHost, repeaterPort);
+ #else
+   unsigned int host;
+   if (!StringToIPAddr(repeaterHost, &host)) {
++    if (rfbClientIoCancelled(client)) return FALSE;
+     rfbClientLog("Couldn't convert '%s' to host address\n", repeaterHost);
+     return FALSE;
+   }
+ 
+-  client->sock = ConnectClientToTcpAddrWithTimeout(host, repeaterPort, client->connectTimeout);
++  client->sock = ConnectClientToTcpAddrForClient(client, host, repeaterPort);
+ #endif
+ 
++  if (rfbClientIoCancelled(client)) return FALSE;
+   if (client->sock == RFB_INVALID_SOCKET) {
+     rfbClientErr("Unable to connect to VNC repeater\n");
+     return FALSE;
+diff --git a/src/libvncclient/sockets.c b/src/libvncclient/sockets.c
+index 7e71b50..57dc4ef 100644
+--- a/src/libvncclient/sockets.c
++++ b/src/libvncclient/sockets.c
+@@ -36,6 +36,7 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <assert.h>
++#include <time.h>
+ #include <rfb/rfbclient.h>
+ #include "sockets.h"
+ #include "tls.h"
+@@ -45,6 +46,86 @@ void PrintInHex(char *buf, int len);
+ 
+ rfbBool errorMessageOnReadFailure = TRUE;
+ 
++/* All socket waits are bounded so cancellation never touches a live descriptor
++ * from another thread. Deadlines measure a stall, not a quiet desktop's age. */
++static uint64_t io_now_ms(void)
++{
++  struct timespec now;
++  clock_gettime(CLOCK_MONOTONIC, &now);
++  return (uint64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
++}
++
++rfbBool rfbClientIoCancelled(rfbClient* client)
++{
++  if (client && client->IsCancelled && client->IsCancelled(client)) {
++    errno = ECANCELED;
++    return TRUE;
++  }
++  return FALSE;
++}
++
++uint64_t rfbClientIoDeadline(unsigned int seconds)
++{
++  return seconds ? io_now_ms() + (uint64_t)seconds * 1000 : 0;
++}
++
++int rfbClientWaitForIo(rfbClient* client, rfbSocket sock, rfbBool writing, uint64_t deadline)
++{
++  for (;;) {
++    fd_set fds;
++    struct timeval wait;
++    uint64_t milliseconds = 100;
++    int result;
++    if (rfbClientIoCancelled(client)) return -1;
++    if (sock == RFB_INVALID_SOCKET || sock >= FD_SETSIZE) { errno = EBADF; return -1; }
++    if (deadline) {
++      uint64_t now = io_now_ms();
++      if (now >= deadline) { errno = ETIMEDOUT; return -1; }
++      if (deadline - now < milliseconds) milliseconds = deadline - now;
++    }
++    FD_ZERO(&fds);
++    FD_SET(sock, &fds);
++    wait.tv_sec = 0;
++    wait.tv_usec = milliseconds * 1000;
++    result = select(sock + 1, writing ? NULL : &fds, writing ? &fds : NULL, NULL, &wait);
++    if (rfbClientIoCancelled(client)) return -1;
++    if (result > 0) return result;
++    if (result < 0 && errno != EINTR) return -1;
++  }
++}
++
++static rfbBool wait_for_connected(rfbClient* client, rfbSocket sock, uint64_t deadline)
++{
++  int error = 0;
++  socklen_t length = sizeof(error);
++  if (rfbClientWaitForIo(client, sock, TRUE, deadline) < 0) return FALSE;
++  if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&error, &length) < 0) return FALSE;
++  if (error) { errno = error; return FALSE; }
++  return TRUE;
++}
++
++static void configure_keepalive(rfbSocket sock)
++{
++  int value = 1;
++  setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&value, sizeof(value));
++#ifdef TCP_KEEPIDLE
++  value = 15;
++  setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, (char*)&value, sizeof(value));
++#endif
++#ifdef TCP_KEEPINTVL
++  value = 5;
++  setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, (char*)&value, sizeof(value));
++#endif
++#ifdef TCP_KEEPCNT
++  value = 3;
++  setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, (char*)&value, sizeof(value));
++#endif
++#ifdef TCP_USER_TIMEOUT
++  value = 15000;
++  setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (char*)&value, sizeof(value));
++#endif
++}
++
+ /*
+  * ReadFromRFBServer is called whenever we want to read some data from the RFB
+  * server.  It is non-trivial for two reasons:
+@@ -62,8 +143,8 @@ rfbBool errorMessageOnReadFailure = TRUE;
+ rfbBool
+ ReadFromRFBServer(rfbClient* client, char *out, unsigned int n)
+ {
+-  const int USECS_WAIT_PER_RETRY = 100000;
+-  int retries = 0;
++  uint64_t deadline = rfbClientIoDeadline(client->readTimeout);
++  if (rfbClientIoCancelled(client)) return FALSE;
+ #undef DEBUG_READ_EXACT
+ #ifdef DEBUG_READ_EXACT
+ 	char* oout=out;
+@@ -112,124 +193,50 @@ ReadFromRFBServer(rfbClient* client, char *out, unsigned int n)
+     return (fread(out,1,n,rec->file) != n ? FALSE : TRUE);
+   }
+   
+-  if (n <= client->buffered) {
+-    memcpy(out, client->bufoutptr, n);
+-    client->bufoutptr += n;
+-    client->buffered -= n;
+-#ifdef DEBUG_READ_EXACT
+-    goto hexdump;
+-#endif
+-    return TRUE;
+-  }
+-
+-  memcpy(out, client->bufoutptr, client->buffered);
+-
+-  out += client->buffered;
+-  n -= client->buffered;
+-
+-  client->bufoutptr = client->buf;
+-  client->buffered = 0;
+-
+-  if (n <= RFB_BUF_SIZE) {
+-
+-    while (client->buffered < n) {
+-      int i;
+-      if (client->tlsSession)
+-        i = ReadFromTLS(client, client->buf + client->buffered, RFB_BUF_SIZE - client->buffered);
+-      else
+-#ifdef LIBVNCSERVER_HAVE_SASL
+-      if (client->saslconn)
+-        i = ReadFromSASL(client, client->buf + client->buffered, RFB_BUF_SIZE - client->buffered);
+-      else {
+-#endif /* LIBVNCSERVER_HAVE_SASL */
+-        i = read(client->sock, client->buf + client->buffered, RFB_BUF_SIZE - client->buffered);
+-#ifdef WIN32
+-	if (i < 0) errno=WSAGetLastError();
+-#endif
+-#ifdef LIBVNCSERVER_HAVE_SASL
+-      }
+-#endif
+-  
+-      if (i <= 0) {
+-	if (i < 0) {
+-	  if (errno == EWOULDBLOCK || errno == EAGAIN) {
+-	    if (client->readTimeout > 0 &&
+-		++retries > (client->readTimeout * 1000 * 1000 / USECS_WAIT_PER_RETRY))
+-	    {
+-          errno = ETIMEDOUT;
+-          rfbClientErr("ReadFromRFBServer: Connection timed out\n");
+-	      return FALSE;
+-	    }
+-	    /* TODO:
+-	       ProcessXtEvents();
+-	    */
+-	    WaitForMessage(client, USECS_WAIT_PER_RETRY);
+-	    i = 0;
+-	  } else {
+-	    rfbClientErr("ReadFromRFBServer: read() failed: (%d: %s)\n",errno,strerror(errno));
+-	    return FALSE;
+-	  }
+-	} else {
+-	  if (errorMessageOnReadFailure) {
+-	    rfbClientLog("VNC server closed connection\n");
+-	  }
+-      errno = 0; // Clear errno on clean disconnect
+-	  return FALSE;
+-	}
+-      }
+-      client->buffered += i;
++  while (n > 0) {
++    int count;
++    char *destination;
++    unsigned int capacity;
++    if (rfbClientIoCancelled(client)) return FALSE;
++    if (client->buffered) {
++      unsigned int available = n < client->buffered ? n : client->buffered;
++      memcpy(out, client->bufoutptr, available);
++      client->bufoutptr += available;
++      client->buffered -= available;
++      out += available;
++      n -= available;
++      continue;
+     }
+-
+-    memcpy(out, client->bufoutptr, n);
+-    client->bufoutptr += n;
+-    client->buffered -= n;
+-
+-  } else {
+-
+-    while (n > 0) {
+-      int i;
+-      if (client->tlsSession)
+-        i = ReadFromTLS(client, out, n);
+-      else
++    client->bufoutptr = client->buf;
++    /* Keep large framebuffer reads direct, without an extra buffer copy. */
++    destination = n > RFB_BUF_SIZE ? out : client->buf;
++    capacity = n > RFB_BUF_SIZE ? n : RFB_BUF_SIZE;
++    if (client->tlsSession)
++      count = ReadFromTLS(client, destination, capacity);
+ #ifdef LIBVNCSERVER_HAVE_SASL
+-      if (client->saslconn)
+-        i = ReadFromSASL(client, out, n);
+-      else
++    else if (client->saslconn)
++      count = ReadFromSASL(client, destination, capacity);
+ #endif
+-        i = read(client->sock, out, n);
+-
+-      if (i <= 0) {
+-	if (i < 0) {
+-#ifdef WIN32
+-	  errno=WSAGetLastError();
+-#endif
+-	  if (errno == EWOULDBLOCK || errno == EAGAIN) {
+-	    if (client->readTimeout > 0 &&
+-		++retries > (client->readTimeout * 1000 * 1000 / USECS_WAIT_PER_RETRY))
+-	    {
+-		errno = ETIMEDOUT;
+-		rfbClientErr("ReadFromRFBServer: Connection timed out\n");
+-		return FALSE;
+-	    }
+-	    /* TODO:
+-	       ProcessXtEvents();
+-	    */
+-	    WaitForMessage(client, USECS_WAIT_PER_RETRY);
+-	    i = 0;
+-	  } else {
+-	    rfbClientErr("ReadFromRFBServer: read() failed: %d (%s)\n",errno,strerror(errno));
+-	    return FALSE;
+-	  }
+-	} else {
+-	  if (errorMessageOnReadFailure) {
+-	    rfbClientLog("VNC server closed connection\n");
+-	  }
+-	  errno = 0; // Clear errno on clean disconnect
+-	  return FALSE;
+-	}
++    else
++      count = read(client->sock, destination, capacity);
++    if (count > 0) {
++      if (destination == out) {
++        out += count;
++        n -= count;
++      } else {
++        client->buffered = count;
+       }
+-      out += i;
+-      n -= i;
++      deadline = rfbClientIoDeadline(client->readTimeout);
++    } else if (count == 0) {
++      errno = ECONNRESET;
++      if (errorMessageOnReadFailure) rfbClientErr("VNC server closed connection\n");
++      return FALSE;
++    } else if (errno == EINTR) {
++      continue;
++    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
++      if (rfbClientWaitForIo(client, client->sock, FALSE, deadline) < 0) return FALSE;
++    } else {
++      return FALSE;
+     }
+   }
+ 
+@@ -253,7 +260,7 @@ hexdump:
+ static rfbBool
+ WriteToRFBServerUnlocked(rfbClient* client, const char *buf, unsigned int n)
+ {
+-  fd_set fds;
++  uint64_t deadline = rfbClientIoDeadline(client->writeTimeout);
+   int i = 0;
+   int j;
+   const char *obuf = buf;
+@@ -263,6 +270,7 @@ WriteToRFBServerUnlocked(rfbClient* client, const char *buf, unsigned int n)
+   int err;
+ #endif /* LIBVNCSERVER_HAVE_SASL */
+ 
++  if (rfbClientIoCancelled(client)) return FALSE;
+   if (client->serverPort==-1)
+     return TRUE; /* vncrec playing */
+ 
+@@ -289,6 +297,7 @@ WriteToRFBServerUnlocked(rfbClient* client, const char *buf, unsigned int n)
+ #endif /* LIBVNCSERVER_HAVE_SASL */
+ 
+   while (i < n) {
++    if (rfbClientIoCancelled(client)) return FALSE;
+     j = write(client->sock, obuf + i, (n - i));
+     if (j <= 0) {
+       if (j < 0) {
+@@ -306,24 +315,23 @@ WriteToRFBServerUnlocked(rfbClient* client, const char *buf, unsigned int n)
+               return FALSE;
+           }
+ 
+-	  FD_ZERO(&fds);
+-	  FD_SET(client->sock,&fds);
+-
+-	  if (select(client->sock+1, NULL, &fds, NULL, NULL) <= 0) {
+-	    rfbClientErr("WriteToRFBServer: select() failed: %d (%s)\n", errno, strerror(errno));
+-	    return FALSE;
+-	  }
++          if (rfbClientWaitForIo(client, client->sock, TRUE, deadline) < 0)
++            return FALSE;
+ 	  j = 0;
++	} else if (errno == EINTR) {
++          continue;
+ 	} else {
+ 	  rfbClientErr("WriteToRFBServer: write() failed: %d (%s)\n", errno, strerror(errno));
+ 	  return FALSE;
+ 	}
+       } else {
++	errno = ECONNRESET;
+ 	rfbClientErr("WriteToRFBServer: write() returned 0\n");
+ 	return FALSE;
+       }
+     }
+     i += j;
++    if (j > 0) deadline = rfbClientIoDeadline(client->writeTimeout);
+   }
+   return TRUE;
+ }
+@@ -333,6 +341,7 @@ rfbBool
+ WriteToRFBServer(rfbClient* client, const char *buf, unsigned int n)
+ {
+   rfbBool result;
++  if (rfbClientIoCancelled(client)) return FALSE;
+   if (client->LockWriteToServer) client->LockWriteToServer(client);
+   result = WriteToRFBServerUnlocked(client, buf, n);
+   if (client->UnlockWriteToServer) client->UnlockWriteToServer(client);
+@@ -351,9 +360,26 @@ ConnectClientToTcpAddr(unsigned int host, int port)
+   return sock;
+ }
+ 
++static rfbSocket
++connectTcpAddr(rfbClient* client, unsigned int host, int port, unsigned int timeout);
++
+ rfbSocket
+ ConnectClientToTcpAddrWithTimeout(unsigned int host, int port, unsigned int timeout)
+ {
++  return connectTcpAddr(NULL, host, port, timeout);
++}
++
++rfbSocket
++ConnectClientToTcpAddrForClient(rfbClient* client, unsigned int host, int port)
++{
++  return connectTcpAddr(client, host, port, client->connectTimeout);
++}
++
++static rfbSocket
++connectTcpAddr(rfbClient* client, unsigned int host, int port, unsigned int timeout)
++{
++  uint64_t deadline = rfbClientIoDeadline(timeout);
++  if (rfbClientIoCancelled(client)) return RFB_INVALID_SOCKET;
+   rfbSocket sock;
+   struct sockaddr_in addr;
+   int one = 1;
+@@ -371,14 +397,16 @@ ConnectClientToTcpAddrWithTimeout(unsigned int host, int port, unsigned int time
+     return RFB_INVALID_SOCKET;
+   }
+ 
+-  if (!SetNonBlocking(sock))
+-    return FALSE;
++  if (!SetNonBlocking(sock)) {
++    rfbCloseSocket(sock);
++    return RFB_INVALID_SOCKET;
++  }
+ 
+   if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+ #ifdef WIN32
+     errno=WSAGetLastError();
+ #endif
+-    if (!((errno == EWOULDBLOCK || errno == EINPROGRESS) && sock_wait_for_connected(sock, timeout))) {
++    if (!((errno == EWOULDBLOCK || errno == EINPROGRESS) && wait_for_connected(client, sock, deadline))) {
+       rfbClientErr("ConnectToTcpAddr: connect() failed: %d (%s)\n", errno, strerror(errno));
+       rfbCloseSocket(sock);
+       return RFB_INVALID_SOCKET;
+@@ -392,6 +420,8 @@ ConnectClientToTcpAddrWithTimeout(unsigned int host, int port, unsigned int time
+     return RFB_INVALID_SOCKET;
+   }
+ 
++  configure_keepalive(sock);
++  if (rfbClientIoCancelled(client)) { rfbCloseSocket(sock); return RFB_INVALID_SOCKET; }
+   return sock;
+ }
+ 
+@@ -406,9 +436,26 @@ ConnectClientToTcpAddr6(const char *hostname, int port)
+   return sock;
+ }
+ 
++static rfbSocket
++connectTcpAddr6(rfbClient* client, const char *hostname, int port, unsigned int timeout);
++
+ rfbSocket
+ ConnectClientToTcpAddr6WithTimeout(const char *hostname, int port, unsigned int timeout)
+ {
++  return connectTcpAddr6(NULL, hostname, port, timeout);
++}
++
++rfbSocket
++ConnectClientToTcpAddr6ForClient(rfbClient* client, const char *hostname, int port)
++{
++  return connectTcpAddr6(client, hostname, port, client->connectTimeout);
++}
++
++static rfbSocket
++connectTcpAddr6(rfbClient* client, const char *hostname, int port, unsigned int timeout)
++{
++  uint64_t deadline = rfbClientIoDeadline(timeout);
++  if (rfbClientIoCancelled(client)) return RFB_INVALID_SOCKET;
+ #ifdef LIBVNCSERVER_IPv6
+   rfbSocket sock;
+   int n;
+@@ -422,15 +469,19 @@ ConnectClientToTcpAddr6WithTimeout(const char *hostname, int port, unsigned int
+   hints.ai_socktype = SOCK_STREAM;
+   if ((n = getaddrinfo(strcmp(hostname,"") == 0 ? "localhost": hostname, port_s, &hints, &res)))
+   {
++    if (rfbClientIoCancelled(client)) return RFB_INVALID_SOCKET;
+     errno = -(1000 + n); // (ab)using errno for 'getaddrinfo' error reporting
+     rfbClientErr("ConnectClientToTcpAddr6: getaddrinfo() failed (%s)\n", gai_strerror(n));
+     return RFB_INVALID_SOCKET;
+   }
+ 
++  if (rfbClientIoCancelled(client)) { freeaddrinfo(res); return RFB_INVALID_SOCKET; }
+   ressave = res;
+   sock = RFB_INVALID_SOCKET;
+   while (res)
+   {
++    if (rfbClientIoCancelled(client)) break;
++    if (deadline && io_now_ms() >= deadline) { errno = ETIMEDOUT; break; }
+     sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+     if (sock != RFB_INVALID_SOCKET)
+     {
+@@ -441,7 +492,7 @@ ConnectClientToTcpAddr6WithTimeout(const char *hostname, int port, unsigned int
+ #ifdef WIN32
+           errno=WSAGetLastError();
+ #endif
+-          if ((errno == EWOULDBLOCK || errno == EINPROGRESS) && sock_wait_for_connected(sock, timeout))
++          if ((errno == EWOULDBLOCK || errno == EINPROGRESS) && wait_for_connected(client, sock, deadline))
+             break;
+           rfbCloseSocket(sock);
+           sock = RFB_INVALID_SOCKET;
+@@ -451,6 +502,7 @@ ConnectClientToTcpAddr6WithTimeout(const char *hostname, int port, unsigned int
+         sock = RFB_INVALID_SOCKET;
+       }
+     }
++    if (errno == ECANCELED || (deadline && io_now_ms() >= deadline)) break;
+     res = res->ai_next;
+   }
+   freeaddrinfo(ressave);
+@@ -468,6 +520,8 @@ ConnectClientToTcpAddr6WithTimeout(const char *hostname, int port, unsigned int
+     return RFB_INVALID_SOCKET;
+   }
+ 
++  configure_keepalive(sock);
++  if (rfbClientIoCancelled(client)) { rfbCloseSocket(sock); return RFB_INVALID_SOCKET; }
+   return sock;
+ 
+ #else
+@@ -489,9 +543,26 @@ ConnectClientToUnixSock(const char *sockFile)
+   return sock;
+ }
+ 
++static rfbSocket
++connectUnixSock(rfbClient* client, const char *sockFile, unsigned int timeout);
++
+ rfbSocket
+ ConnectClientToUnixSockWithTimeout(const char *sockFile, unsigned int timeout)
+ {
++  return connectUnixSock(NULL, sockFile, timeout);
++}
++
++rfbSocket
++ConnectClientToUnixSockForClient(rfbClient* client, const char *sockFile)
++{
++  return connectUnixSock(client, sockFile, client->connectTimeout);
++}
++
++static rfbSocket
++connectUnixSock(rfbClient* client, const char *sockFile, unsigned int timeout)
++{
++  uint64_t deadline = rfbClientIoDeadline(timeout);
++  if (rfbClientIoCancelled(client)) return RFB_INVALID_SOCKET;
+ #ifdef WIN32
+   rfbClientErr("Windows doesn't support UNIX sockets\n");
+   return RFB_INVALID_SOCKET;
+@@ -517,12 +588,13 @@ ConnectClientToUnixSockWithTimeout(const char *sockFile, unsigned int timeout)
+   }
+ 
+   if (connect(sock, (struct sockaddr *)&addr, sizeof(addr.sun_family) + strlen(addr.sun_path)) < 0 &&
+-      !(errno == EINPROGRESS && sock_wait_for_connected(sock, timeout))) {
++      !(errno == EINPROGRESS && wait_for_connected(client, sock, deadline))) {
+     rfbClientErr("ConnectToUnixSock: connect\n");
+     rfbCloseSocket(sock);
+     return RFB_INVALID_SOCKET;
+   }
+ 
++  if (rfbClientIoCancelled(client)) { rfbCloseSocket(sock); return RFB_INVALID_SOCKET; }
+   return sock;
+ #endif
+ }
+@@ -871,39 +943,22 @@ PrintInHex(char *buf, int len)
+ 
+ int WaitForMessage(rfbClient* client,unsigned int usecs)
+ {
+-  fd_set fds;
+-  struct timeval timeout;
+-  int num;
+-
+-  if (client->serverPort==-1)
+-    /* playing back vncrec file */
+-    return 1;
+-
+-  /* Check if we have buffered data available */
+-  if (client->buffered > 0) {
+-    return 1;
+-  }
+-
+-  timeout.tv_sec=(usecs/1000000);
+-  timeout.tv_usec=(usecs%1000000);
+-
+-  if(client->sock == RFB_INVALID_SOCKET) {
+-      errno = EBADF;
+-      return -1;
+-  }
+-
+-  FD_ZERO(&fds);
+-  FD_SET(client->sock,&fds);
+-
+-  num=select(client->sock+1, &fds, NULL, NULL, &timeout);
+-  if(num<0) {
+-#ifdef WIN32
+-    errno=WSAGetLastError();
+-#endif
+-    rfbClientErr("Waiting for message failed: %d (%s)\n",errno,strerror(errno));
+-  }
+-
+-  return num;
++  uint64_t deadline = io_now_ms() + ((uint64_t)usecs + 999) / 1000;
++  if (rfbClientIoCancelled(client)) return -1;
++  if (client->serverPort == -1 || client->buffered > 0) return 1;
++  if (!usecs) {
++    fd_set fds;
++    struct timeval wait = {0, 0};
++    int result;
++    if (client->sock == RFB_INVALID_SOCKET || client->sock >= FD_SETSIZE) { errno = EBADF; return -1; }
++    FD_ZERO(&fds);
++    FD_SET(client->sock, &fds);
++    result = select(client->sock + 1, &fds, NULL, NULL, &wait);
++    return rfbClientIoCancelled(client) ? -1 : result;
++  }
++  if (rfbClientWaitForIo(client, client->sock, FALSE, deadline) > 0) return 1;
++  if (errno == ETIMEDOUT) return 0;
++  return -1;
+ }
+ 
+ 
+diff --git a/src/libvncclient/tls_openssl.c b/src/libvncclient/tls_openssl.c
+index 7eae7c1..8c8a354 100644
+--- a/src/libvncclient/tls_openssl.c
++++ b/src/libvncclient/tls_openssl.c
+@@ -118,30 +118,16 @@ static rfbBool InitLockingCb()
+ static rfbBool InitLockingCb() { return TRUE; }
+ #endif
+ 
+-static int
+-ssl_error_to_errno (int ssl_error)
++/* WANT_READ and WANT_WRITE must wait for the requested direction. Never hold
++ * tlsRwMutex while polling; the other I/O direction must be able to progress. */
++static rfbBool wait_for_tls(rfbClient* client, int error, uint64_t deadline)
+ {
+-	switch (ssl_error) {
+-	case SSL_ERROR_NONE:
+-		return 0;
+-	case SSL_ERROR_ZERO_RETURN:
+-		/* this one does not map well at all */
+-		//d(printf ("ssl_errno: SSL_ERROR_ZERO_RETURN\n"));
+-		return EINVAL;
+-	case SSL_ERROR_WANT_READ:   /* non-fatal; retry */
+-	case SSL_ERROR_WANT_WRITE:  /* non-fatal; retry */
+-		//d(printf ("ssl_errno: SSL_ERROR_WANT_[READ,WRITE]\n"));
+-		return EAGAIN;
+-	case SSL_ERROR_SYSCALL:
+-		//d(printf ("ssl_errno: SSL_ERROR_SYSCALL\n"));
+-		return EINTR;
+-	case SSL_ERROR_SSL:
+-		//d(printf ("ssl_errno: SSL_ERROR_SSL  <-- very useful error...riiiiight\n"));
+-		return EINTR;
+-	default:
+-		//d(printf ("ssl_errno: default error\n"));
+-		return EINTR;
+-	}
++  if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE)
++    return rfbClientWaitForIo(client, client->sock, error == SSL_ERROR_WANT_WRITE, deadline) > 0;
++  if (error == SSL_ERROR_ZERO_RETURN) errno = ECONNRESET;
++  else if (error == SSL_ERROR_SYSCALL) { if (errno == 0) errno = ECONNRESET; }
++  else errno = EPROTO;
++  return FALSE;
+ }
+ 
+ static rfbBool
+@@ -166,28 +152,6 @@ InitializeTLS(void)
+   return TRUE;
+ }
+ 
+-static int sock_read_ready(SSL *ssl, uint32_t ms)
+-{
+-	int r = 0;
+-	fd_set fds;
+-	struct timeval tv;
+-
+-	FD_ZERO(&fds);
+-
+-        if(SSL_get_fd(ssl) == RFB_INVALID_SOCKET) {
+-            errno = EBADF;
+-            return -1;
+-        }
+-
+-	FD_SET(SSL_get_fd(ssl), &fds);
+-
+-	tv.tv_sec = ms / 1000;
+-	tv.tv_usec = (ms % 1000) * 1000;
+-	
+-	r = select (SSL_get_fd(ssl) + 1, &fds, NULL, NULL, &tv); 
+-
+-	return r;
+-}
+ 
+ 
+ static rfbBool
+@@ -488,52 +452,37 @@ open_ssl_connection (rfbClient *client, int sockfd, rfbBool anonTLS, rfbCredenti
+       SSL_set_ex_data(ssl, rfbTLSExpectedFingerprintIndex, cred->x509Credential.x509ExpectedFingerprint);
+   }
+ 
+-  do
+   {
+-    n = SSL_connect(ssl);
+-		
+-    if (n != 1) 
+-    {
+-      int ready;
+-      long verify_res;
+-
+-      switch(SSL_get_error(ssl, n))
+-          {
+-          case SSL_ERROR_WANT_READ:
+-          case SSL_ERROR_WANT_WRITE:
+-              ready = sock_read_ready(ssl, 1000);
+-
+-              if (ready == -1) {
+-                  ERR_clear_error();
+-                  SSL_shutdown(ssl);
+-                  goto error_free_ssl;
+-              }
+-
+-              break;
+-          default:
+-              verify_res = SSL_get_verify_result(ssl);
+-              if (verify_res != X509_V_OK)
+-                  rfbClientLog("Could not verify server certificate: %s.\n",
+-                               X509_verify_cert_error_string(verify_res));
+-
+-              ERR_clear_error();
+-              SSL_shutdown(ssl);
+-              goto error_free_ssl;
+-              break;
+-          }
++    uint64_t deadline = rfbClientIoDeadline(client->readTimeout);
++    for (;;) {
++      int error;
++      if (rfbClientIoCancelled(client)) goto error_free_ssl;
+       ERR_clear_error();
++      errno = 0;
++      n = SSL_connect(ssl);
++      if (n == 1) break;
++      error = SSL_get_error(ssl, n);
++      if (!wait_for_tls(client, error, deadline)) goto error_free_ssl;
+     }
+-  } while( n != 1 );
++  }
+ 
+   X509_VERIFY_PARAM_free(param);
+   return ssl;
+ 
+ error_free_ssl:
+-  SSL_free(ssl);
++  {
++    int operationError = errno;
++    SSL_free(ssl);
++    errno = operationError;
++  }
+ 
+ error_free_ctx:
+-  X509_VERIFY_PARAM_free(param);
+-  SSL_CTX_free(ssl_ctx);
++  {
++    int operationError = errno;
++    X509_VERIFY_PARAM_free(param);
++    SSL_CTX_free(ssl_ctx);
++    errno = operationError;
++  }
+ 
+   return NULL;
+ }
+@@ -559,39 +508,20 @@ InitializeTLSSession(rfbClient* client, rfbBool anonTLS, rfbCredential *cred)
+ static rfbBool
+ HandshakeTLS(rfbClient* client)
+ {
+-  int timeout = 15;
+-  int ret;
+-
+-return TRUE;
+-
+-  while (timeout > 0 && (ret = SSL_do_handshake(client->tlsSession)) < 0)
+-  {
+-    if (ret != -1)
+-    {
+-      rfbClientLog("TLS handshake blocking.\n");
+-#ifdef WIN32
+-      Sleep(1000);
+-#else
+-	  sleep(1);
+-#endif
+-      timeout--;
+-      continue;
+-    }
+-    rfbClientLog("TLS handshake failed.\n");
+-
+-    FreeTLS(client);
+-    return FALSE;
+-  }
+-
+-  if (timeout <= 0)
+-  {
+-    rfbClientLog("TLS handshake timeout.\n");
+-    FreeTLS(client);
+-    return FALSE;
++  /* Initialization may fail on timeout, cancellation or certificate rejection.
++   * Keep its errno intact; there is no SSL object to pass to OpenSSL. */
++  if (!client->tlsSession) return FALSE;
++  uint64_t deadline = rfbClientIoDeadline(client->readTimeout);
++  for (;;) {
++    int result, error;
++    if (rfbClientIoCancelled(client)) return FALSE;
++    ERR_clear_error();
++    errno = 0;
++    result = SSL_do_handshake(client->tlsSession);
++    if (result == 1) return TRUE;
++    error = SSL_get_error(client->tlsSession, result);
++    if (!wait_for_tls(client, error, deadline)) return FALSE;
+   }
+-
+-  rfbClientLog("TLS handshake done.\n");
+-  return TRUE;
+ }
+ 
+ /* VeNCrypt sub auth. 1 byte auth count, followed by count * 4 byte integers */
+@@ -781,67 +711,55 @@ HandleVeNCryptAuth(rfbClient* client)
+   }
+ 
+   /* Start up the TLS session */
+-  if (!InitializeTLSSession(client, anonTLS, cred)) result = FALSE;
+-
+-  if (!HandshakeTLS(client)) result = FALSE;
++  result = InitializeTLSSession(client, anonTLS, cred) && HandshakeTLS(client);
+ 
+   /* We are done here. The caller should continue with client->subAuthScheme
+    * to do actual sub authentication.
+    */
+-  if (cred) FreeX509Credential(cred);
++  {
++    int operationError = errno;
++    if (cred) FreeX509Credential(cred);
++    if (!result) errno = operationError;
++  }
+   return result;
+ }
+ 
+ int
+ ReadFromTLS(rfbClient* client, char *out, unsigned int n)
+ {
+-  int ret = 0;
+-  int ssl_error = SSL_ERROR_NONE;
+-
+-  LOCK(client->tlsRwMutex);
+-  ret = SSL_read (client->tlsSession, out, n);
+-
+-  if (ret < 0)
+-      ssl_error = SSL_get_error(client->tlsSession, ret);
+-  UNLOCK(client->tlsRwMutex);
+-
+-  if (ret >= 0)
+-    return ret;
+-  else {
+-    errno = ssl_error_to_errno(ssl_error);
+-    if (errno != EAGAIN) {
+-      rfbClientLog("Error reading from TLS: -.\n");
+-    }
++  uint64_t deadline = rfbClientIoDeadline(client->readTimeout);
++  for (;;) {
++    int result, error;
++    if (rfbClientIoCancelled(client)) return -1;
++    LOCK(client->tlsRwMutex);
++    ERR_clear_error();
++    errno = 0;
++    result = SSL_read(client->tlsSession, out, n);
++    error = result > 0 ? SSL_ERROR_NONE : SSL_get_error(client->tlsSession, result);
++    UNLOCK(client->tlsRwMutex);
++    if (result > 0) return result;
++    if (!wait_for_tls(client, error, deadline)) return -1;
+   }
+-
+-  return -1;
+ }
+ 
+ int
+ WriteToTLS(rfbClient* client, const char *buf, unsigned int n)
+ {
+   unsigned int offset = 0;
+-  int ret = 0;
+-  int ssl_error = SSL_ERROR_NONE;
+-
+-  while (offset < n)
+-  {
++  uint64_t deadline = rfbClientIoDeadline(client->writeTimeout);
++  while (offset < n) {
++    int result, error;
++    if (rfbClientIoCancelled(client)) return -1;
+     LOCK(client->tlsRwMutex);
+-    ret = SSL_write (client->tlsSession, buf + offset, (size_t)(n-offset));
+-
+-    if (ret < 0)
+-      ssl_error = SSL_get_error (client->tlsSession, ret);
++    ERR_clear_error();
++    errno = 0;
++    result = SSL_write(client->tlsSession, buf + offset, n - offset);
++    error = result > 0 ? SSL_ERROR_NONE : SSL_get_error(client->tlsSession, result);
+     UNLOCK(client->tlsRwMutex);
+-
+-    if (ret == 0) continue;
+-    if (ret < 0)
+-    {
+-      errno = ssl_error_to_errno(ssl_error);
+-      if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
+-      rfbClientLog("Error writing to TLS: -\n");
+-      return -1;
+-    }
+-    offset += (unsigned int)ret;
++    if (result > 0) {
++      offset += result;
++      deadline = rfbClientIoDeadline(client->writeTimeout);
++    } else if (!wait_for_tls(client, error, deadline)) return -1;
+   }
+   return offset;
+ }

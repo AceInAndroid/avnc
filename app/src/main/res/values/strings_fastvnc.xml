@@ -1,0 +1,8 @@
+<resources>
+    <string name="fastvnc_attribution">FastVNC is an independently maintained derivative of AVNC, originally created by Gaurav Ujjwal and contributors. Original copyright and third-party notices are retained. Licensed under GNU GPL v3 or later. Branding, interface and remote-input changes: November 2, 2026.</string>
+    <string name="fastvnc_native_library_missing">The native library is missing. Install a FastVNC build that supports this device’s processor.</string>
+    <string name="fastvnc_welcome_title">Welcome to FastVNC</string>
+    <string name="fastvnc_welcome_summary">Connect to your computer with a desktop keyboard, responsive touchpad and familiar Mac or Windows controls.</string>
+    <string name="fastvnc_project_summary">FastVNC is open source. Find the source code and report problems on the project page.</string>
+    <string name="fastvnc_whats_new">What’s new</string>
+</resources>

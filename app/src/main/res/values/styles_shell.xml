@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ThemeOverlay.HomeShell" parent="">
+        <item name="colorPrimary">@color/shell_blue</item>
+        <item name="colorSecondary">@color/shell_blue</item>
+        <item name="colorAccent">@color/shell_blue</item>
+        <item name="android:colorAccent">@color/shell_blue</item>
+        <item name="colorControlActivated">@color/shell_blue</item>
+    </style>
+</resources>

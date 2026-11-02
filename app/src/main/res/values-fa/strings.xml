@@ -50,7 +50,7 @@
     <string name="msg_about_app">یک کارخواه سریع و ایمن VNC. به صورت دوردست هر افزاره‌ای که یک کارساز VNC را اجرا کند را ببینید و کنترل کنید.
 \n
 \n
-\nبرنامهٔ AVNC یک نرم‌افزار متن‌باز و کپی‌لفت است — که با کمک همیاری مشارکت‌کنندگان ساخته شده است.</string>
+\nبرنامهٔ FastVNC یک نرم‌افزار متن‌باز و کپی‌لفت است — که با کمک همیاری مشارکت‌کنندگان ساخته شده است.</string>
     <string name="msg_server_profile_added">کارساز اضافه شد</string>
     <string name="msg_server_profile_deleted">کارساز حذف شد</string>
     <string name="msg_pip_not_supported">در این افزاره پشتیبانی نمی‌شود</string>

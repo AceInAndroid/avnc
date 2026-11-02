@@ -2,7 +2,6 @@
 package com.gaurav.avnc.ui.vnc
 
 import android.annotation.SuppressLint
-import android.content.res.ColorStateList
 import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
@@ -25,8 +24,7 @@ import com.google.android.material.button.MaterialButton
 class Toolbar(private val activity: VncActivity) {
     private val vm = activity.viewModel
     val macControls = MacViewerControls(activity)
-    private lateinit var macRow: View
-    private var legacyControls = emptyList<View>()
+    private val tabRows = mutableListOf<java.lang.ref.WeakReference<LinearLayout>>()
     private val style = ControlStyle(activity)
     private val host = activity.binding.frameContainer
     private val capsule = LinearLayout(activity)
@@ -34,13 +32,11 @@ class Toolbar(private val activity: VncActivity) {
     private val menuOverlay = FrameLayout(activity)
     private val menuPanel = LinearLayout(activity)
     private val menuScroll = ScrollView(activity)
-    private lateinit var touchpadButton: MaterialButton
     private var initialized = false
     private var connected = false
     private var menuHelp = false
     private var menuActions = false
     private var bottomInset = 0
-    private var compactLabels: Boolean? = null
     private var edgeCandidate = false
     private var edgeCaptured = false
     private var edgeX = 0f
@@ -61,29 +57,11 @@ class Toolbar(private val activity: VncActivity) {
         capsule.background = style.background(radius = 32)
         capsule.elevation = style.dp(8).toFloat()
         capsule.isClickable = true
-        fun action(label: Int, icon: Int, id: Int, run: () -> Unit): MaterialButton {
-            val b = style.button(activity.getString(label)).apply {
-                this.id = id
-                this.icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(activity, icon)
-                iconSize = style.dp(19); iconPadding = style.dp(6)
-                iconTint = ColorStateList.valueOf(style.ink)
-                backgroundTintList = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
-                cornerRadius = style.dp(24)
-                minimumWidth = style.dp(48)
-                setOnClickListener { run() }
-            }
-            capsule.addView(b, LinearLayout.LayoutParams(-2, style.dp(48)))
-            return b
-        }
-        action(R.string.control_keyboard, R.drawable.ic_control_keyboard, R.id.keyboard_btn) { activity.showKeyboard() }
-        touchpadButton = action(R.string.control_touchpad, R.drawable.ic_control_touchpad, R.id.touchpad_btn) { toggleTouchpad() }
-        action(R.string.control_more, R.drawable.ic_control_more, R.id.controls_more) { open() }
+        capsule.addView(createTabRow(), LinearLayout.LayoutParams(0, style.dp(48), 1f))
         capsule.addView(style.icon(R.drawable.ic_control_chevron, R.string.control_collapse).apply {
             id = R.id.controls_collapse
             setOnClickListener { vm.pref.input.controlsCollapsed = true; refresh() }
         }, LinearLayout.LayoutParams(style.dp(48), style.dp(48)))
-        legacyControls = (0 until capsule.childCount).map { capsule.getChildAt(it) }
-        macRow = macControls.createRow()
         host.addView(capsule, floatingParams())
         opener.id = R.id.open_toolbar_btn
         opener.elevation = style.dp(6).toFloat()
@@ -123,26 +101,12 @@ class Toolbar(private val activity: VncActivity) {
 
     fun refresh() {
         if (!initialized) return
-        val show = connected && vm.inPiPMode.value != true && !activity.computerKeyboard.isVisible
+        val show = connected && vm.inPiPMode.value != true && activity.selectedInputTab == null
         capsule.isVisible = show && !vm.pref.input.controlsCollapsed
         opener.isVisible = show && vm.pref.input.controlsCollapsed
-        if (macControls.isMac && macRow.parent == null) {
-            capsule.removeAllViews()
-            capsule.addView(macRow, LinearLayout.LayoutParams(-1, style.dp(48)))
-        } else if (!macControls.isMac && macRow.parent != null) {
-            capsule.removeAllViews()
-            legacyControls.forEach { capsule.addView(it) }
-        }
         macControls.refresh()
-        val canInput = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT
-        capsule.findViewById<View>(R.id.keyboard_btn)?.apply { isEnabled = canInput; alpha = if (canInput) 1f else .4f }
-        touchpadButton.isEnabled = canInput
-        touchpadButton.alpha = if (canInput) 1f else .4f
-        val selected = activity.floatingTouchpad.isExpanded
-        touchpadButton.isSelected = selected
-        touchpadButton.setTextColor(if (selected) style.blue else style.ink)
-        touchpadButton.iconTint = ColorStateList.valueOf(if (selected) style.blue else style.ink)
-        activity.computerKeyboard.updateTouchpadSelection(selected)
+        tabRows.removeAll { it.get() == null }
+        tabRows.forEach { it.get()?.let(::refreshTabs) }
         position()
     }
 
@@ -206,7 +170,7 @@ class Toolbar(private val activity: VncActivity) {
                 if (params.bottomMargin != margin) { params.bottomMargin = margin; view.layoutParams = params }
             }
         }
-        val capsuleWidth = if (macControls.isMac) minOf(host.width - style.dp(24), style.dp(1000)).coerceAtLeast(1) else -2
+        val capsuleWidth = minOf(host.width - style.dp(24), style.dp(650)).coerceAtLeast(1)
         if (capsule.layoutParams.width != capsuleWidth) capsule.layoutParams = capsule.layoutParams.apply { width = capsuleWidth }
         val menuHost = activity.binding.viewerRoot
         val landscape = menuHost.width > menuHost.height
@@ -224,19 +188,41 @@ class Toolbar(private val activity: VncActivity) {
             old.bottomMargin != params.bottomMargin || old.leftMargin != params.leftMargin || old.topMargin != params.topMargin) {
             menuScroll.layoutParams = params
         }
-        val compact = host.width < style.dp(340) || (activity.resources.configuration.fontScale > 1.3f && host.width < style.dp(440))
-        if (compactLabels != compact) {
-            compactLabels = compact
-            for (i in 0 until capsule.childCount) (capsule.getChildAt(i) as? MaterialButton)?.let {
-                val label = activity.getString(when (it.id) {
-                    R.id.keyboard_btn -> R.string.control_keyboard
-                    R.id.touchpad_btn -> R.string.control_touchpad
-                    else -> R.string.control_more
-                })
-                it.text = if (compact) "" else label
-                it.contentDescription = label
-                it.iconPadding = if (compact) 0 else style.dp(6)
-            }
+    }
+
+    /** Identical order and selection in every input page and the collapsed viewer row. */
+    fun createTabRow(keyboard: Boolean = false): View {
+        val row = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
+        val ids = if (keyboard) listOf(R.id.keyboard_tab, R.id.keyboard_touchpad, R.id.keyboard_shortcuts, R.id.keyboard_more)
+                  else listOf(R.id.keyboard_btn, R.id.touchpad_btn, R.id.shortcuts_btn, R.id.controls_more)
+        val labels = listOf(R.string.input_tab_keyboard, R.string.control_touchpad, R.string.input_tab_shortcuts, R.string.control_more)
+        val tabs = listOf(InputTab.Keyboard, InputTab.Touchpad, InputTab.Shortcuts)
+        labels.forEachIndexed { index, label ->
+            row.addView(style.button(activity.getString(label)).apply {
+                id = ids[index]
+                tag = if (index < 3) "input_tab_${tabs[index].name.lowercase()}" else "input_more"
+                textSize = 12f
+                maxLines = 2
+                setPadding(style.dp(3), 0, style.dp(3), 0)
+                cornerRadius = style.dp(22)
+                setOnClickListener { if (index < 3) activity.selectInputTab(tabs[index]) else open() }
+            }, LinearLayout.LayoutParams(0, style.dp(48), 1f).apply { setMargins(style.dp(2), 0, style.dp(2), 0) })
+        }
+        tabRows += java.lang.ref.WeakReference(row)
+        refreshTabs(row)
+        return row
+    }
+
+    private fun refreshTabs(row: LinearLayout) {
+        val canInput = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT
+        val tabs = listOf(InputTab.Keyboard, InputTab.Touchpad, InputTab.Shortcuts)
+        for (i in 0 until row.childCount) {
+            val b = row.getChildAt(i) as MaterialButton
+            val selected = i < 3 && activity.selectedInputTab == tabs[i]
+            b.isEnabled = i == 3 || canInput
+            b.alpha = if (b.isEnabled) 1f else .4f
+            style.select(b, selected)
+            if (Build.VERSION.SDK_INT >= 30) b.stateDescription = activity.getString(if (selected) R.string.control_active else R.string.control_inactive)
         }
     }
 
@@ -272,8 +258,25 @@ class Toolbar(private val activity: VncActivity) {
             })
             menuPanel.addView(style.label(activity.getString(R.string.control_touchpad_hint), 15f).apply { setLineSpacing(style.dp(5).toFloat(), 1f) })
         } else {
+            section(R.string.input_connection)
+            option(activity.getString(R.string.input_disconnect), tag = "controls_disconnect") {
+                close(); activity.disconnectSession()
+            }
+            section(R.string.sharing_controls_title)
+            option(activity.getString(R.string.clipboard_title), tag = "controls_clipboard") {
+                close(); activity.clipboardControls.show()
+            }
+            option(activity.getString(R.string.file_transfer_title),
+                    enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT,
+                    tag = "controls_send_file") {
+                close(); activity.fileTransferControls.show()
+            }
             if (macControls.isMac) {
                 section(R.string.mac_action_dock)
+                option(activity.getString(R.string.mac_action_dock), enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT,
+                        tag = "controls_mac_dock") { close(); activity.performMacDock() }
+                option(activity.getString(R.string.mac_mission_control), enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT,
+                        tag = "controls_mac_mission") { close(); activity.performRemoteAction(RemoteAction.OVERVIEW) }
                 listOf(R.string.mac_spotlight to RemoteAction.SEARCH,
                         R.string.mac_previous_app to RemoteAction.SWITCH_APP,
                         R.string.mac_action_quick_look to RemoteAction.QUICK_LOOK,
@@ -284,8 +287,8 @@ class Toolbar(private val activity: VncActivity) {
                     }
                 }
                 option(R.string.mac_dock_activation) { close(); macControls.showDockSettings() }
-                option(R.string.mac_displays) { close(); macControls.showDisplays() }
-                option(R.string.mac_quality) { close(); macControls.showQuality() }
+                option(activity.getString(R.string.mac_displays), tag = "controls_mac_displays") { close(); macControls.showDisplays() }
+                option(activity.getString(R.string.mac_quality), tag = "controls_mac_quality") { close(); macControls.showQuality() }
             }
             section(R.string.control_picture)
             option(R.string.control_fit) { vm.resetZoomToDefault(); close() }
@@ -299,6 +302,10 @@ class Toolbar(private val activity: VncActivity) {
                 option(label, vm.activeViewMode.value == mode) { vm.setViewMode(mode); close() }
             }
             section(R.string.control_interaction)
+            option(activity.getString(R.string.input_floating_touchpad), vm.pref.input.showTouchpad,
+                    enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT, tag = "controls_floating_touchpad") {
+                close(); toggleTouchpad()
+            }
             val platform = RemoteInputEditor.platformLabel(activity, vm.remoteInputConfig.platform)
             option(activity.getString(R.string.remote_input_this_computer) + " · " + platform, tag = "remote_input_session") {
                 close()
@@ -320,7 +327,7 @@ class Toolbar(private val activity: VncActivity) {
                 }
             }
             option(R.string.control_aux, enabled = vm.activeViewMode.value != ServerProfile.VIEW_MODE_NO_INPUT) {
-                activity.hideComputerKeyboard(); activity.virtualKeys.show(true); close()
+                activity.hideInputPanels(); activity.virtualKeys.show(true); close()
             }
             section(R.string.control_help)
             option(R.string.control_help) { menuHelp = true; vm.pref.input.hasShownControlHelp = true; renderMenu() }
@@ -355,7 +362,7 @@ class Toolbar(private val activity: VncActivity) {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun onEdgeTouch(event: MotionEvent): Boolean {
-        if (!connected || !vm.pref.viewer.toolbarOpenWithSwipe || activity.computerKeyboard.isVisible) return false
+        if (!connected || !vm.pref.viewer.toolbarOpenWithSwipe || activity.selectedInputTab != null) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 edgeCaptured = false

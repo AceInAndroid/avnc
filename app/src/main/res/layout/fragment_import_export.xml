@@ -1,146 +1,63 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-  ~ Copyright (c) 2021  Gaurav Ujjwal.
-  ~
-  ~ SPDX-License-Identifier:  GPL-3.0-or-later
-  ~
-  ~ See COPYING.txt for more details.
-  -->
-
+<?xml version="1.0" encoding="utf-8"?>
 <layout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-
     <data>
-
-        <variable
-            name="viewModel"
-            type="com.gaurav.avnc.viewmodel.PrefsViewModel" />
+        <variable name="viewModel" type="com.gaurav.avnc.viewmodel.PrefsViewModel" />
     </data>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="5dp"
-        android:weightSum="1">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/title_export"
-            style="@style/PreferenceCategoryTitleTextStyle" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginBottom="@dimen/padding_small"
-            android:background="@color/colorBorder" />
-
-        <CheckBox
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="@={viewModel.exportSettings}"
-            android:text="@string/title_export_settings" />
-
-        <CheckBox
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="@={viewModel.exportProfiles}"
-            android:text="@string/title_export_profiles" />
-
-        <CheckBox
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="@={viewModel.exportSecrets}"
-            android:enabled="@{viewModel.exportProfiles}"
-            android:text="@string/title_export_passwords_and_keys" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight=".1" />
-
-        <Button
-            android:id="@+id/export_btn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:enabled="@{viewModel.exportSettings || viewModel.exportProfiles}"
-            android:paddingHorizontal="30dp"
-            android:paddingVertical="@dimen/padding_normal"
-            android:text="@string/title_export_file"
-            app:icon="@drawable/ic_file" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight=".1" />
-
-        <Button
-            android:id="@+id/export_qr_btn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:enabled="@{viewModel.exportSettings || viewModel.exportProfiles}"
-            android:paddingHorizontal="30dp"
-            android:paddingVertical="@dimen/padding_normal"
-            android:text="@string/title_export_qr"
-            app:icon="@drawable/ic_qr_code" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight=".3" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="2dp"
-            android:layout_marginBottom="@dimen/padding_small"
-            android:background="@color/colorBorder" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/title_import"
-            style="@style/PreferenceCategoryTitleTextStyle" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginBottom="@dimen/padding_small"
-            android:background="@color/colorBorder" />
-
-        <CheckBox
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="@={viewModel.deleteCurrentServerBeforeImport}"
-            android:paddingTop="@dimen/padding_small"
-            android:text="@string/title_delete_servers_before_import" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight=".1" />
-
-        <Button
-            android:id="@+id/import_btn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="30dp"
-            android:paddingVertical="@dimen/padding_normal"
-            android:text="@string/title_import_file"
-            app:icon="@drawable/ic_file" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight=".1" />
-
-        <Button
-            android:id="@+id/import_qr_btn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="30dp"
-            android:paddingVertical="@dimen/padding_normal"
-            android:text="@string/title_import_qr"
-            app:icon="@drawable/ic_qr_code" />
-    </LinearLayout>
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:background="@color/shell_background" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="16dp">
+            <ProgressBar android:id="@+id/backup_progress" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:indeterminate="true" android:visibility="gone" />
+            <TextView android:id="@+id/backup_status" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:padding="12dp" android:textSize="15sp"
+                android:textColor="@color/shell_ink" android:accessibilityLiveRegion="polite" android:visibility="gone" />
+            <Button android:id="@+id/backup_retry" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minHeight="48dp" android:text="@string/settings_backup_retry" android:visibility="gone" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginBottom="16dp"
+                app:cardCornerRadius="24dp" app:cardElevation="0dp" app:cardBackgroundColor="@color/shell_surface">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="16dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/title_export" android:textSize="22sp" android:textStyle="bold"
+                        android:textColor="@color/shell_ink" android:paddingBottom="8dp" />
+                    <CheckBox android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:checked="@={viewModel.exportSettings}" android:enabled="@{!viewModel.backupBusy}"
+                        android:text="@string/title_export_settings" />
+                    <CheckBox android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:checked="@={viewModel.exportProfiles}" android:enabled="@{!viewModel.backupBusy}"
+                        android:text="@string/title_export_profiles" />
+                    <CheckBox android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:checked="@={viewModel.exportSecrets}"
+                        android:enabled="@{!viewModel.backupBusy &amp;&amp; viewModel.exportProfiles}" android:text="@string/title_export_passwords_and_keys" />
+                    <Button android:id="@+id/export_btn" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:enabled="@{!viewModel.backupBusy &amp;&amp; (viewModel.exportSettings || viewModel.exportProfiles)}"
+                        android:text="@string/title_export_file" app:icon="@drawable/ic_file" />
+                    <Button android:id="@+id/export_qr_btn" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:enabled="@{!viewModel.backupBusy &amp;&amp; (viewModel.exportSettings || viewModel.exportProfiles)}"
+                        android:text="@string/title_export_qr" app:icon="@drawable/ic_qr_code" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content" app:cardCornerRadius="24dp" app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/shell_surface">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="16dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/title_import" android:textSize="22sp" android:textStyle="bold"
+                        android:textColor="@color/shell_ink" android:paddingBottom="8dp" />
+                    <CheckBox android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:checked="@={viewModel.deleteCurrentServerBeforeImport}"
+                        android:enabled="@{!viewModel.backupBusy}" android:text="@string/title_delete_servers_before_import" />
+                    <Button android:id="@+id/import_btn" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:enabled="@{!viewModel.backupBusy}" android:text="@string/title_import_file" app:icon="@drawable/ic_file" />
+                    <Button android:id="@+id/import_qr_btn" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:minHeight="48dp" android:enabled="@{!viewModel.backupBusy}" android:text="@string/title_import_qr" app:icon="@drawable/ic_qr_code" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </ScrollView>
 </layout>

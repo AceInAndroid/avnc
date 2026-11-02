@@ -2,6 +2,7 @@
 package com.gaurav.avnc.ui.vnc
 
 import android.annotation.SuppressLint
+import android.content.SharedPreferences
 import android.graphics.PointF
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
@@ -17,17 +18,22 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.isVisible
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.preference.PreferenceManager
 import com.gaurav.avnc.R
 import com.gaurav.avnc.ui.vnc.input.InputHandler
 import com.gaurav.avnc.ui.vnc.input.ThreeFingerGesture
 import com.gaurav.avnc.vnc.PointerButton
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** App-local overlay. Its header moves the panel; its surface moves the remote pointer. */
 @SuppressLint("ClickableViewAccessibility")
 class FloatingTouchpad(private val activity: VncActivity, private val input: InputHandler) {
     private val pref = activity.viewModel.pref.input
+    private val preferences = PreferenceManager.getDefaultSharedPreferences(activity)
     private val parent = activity.binding.touchpadHost
     private val density = activity.resources.displayMetrics.density
     private fun dp(value: Int) = (value * density).toInt()
@@ -36,8 +42,10 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
     private val primary get() = style.blue
     var onStateChanged: (() -> Unit)? = null
     private var docked = false
+    private var tabHost: FrameLayout? = null
+    val isTabbed get() = tabHost != null
     val isDocked get() = docked
-    val isExpanded get() = active && !suppressed && pref.showTouchpad && !pref.touchpadCollapsed
+    val isExpanded get() = active && !suppressed && (isTabbed || (pref.showTouchpad && !pref.touchpadCollapsed))
     private var active = false
     private var suppressed = false
     private var fractionX = pref.touchpadX
@@ -65,6 +73,17 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
         }
     }
     private val expanded = LinearLayout(activity)
+    private val header = LinearLayout(activity)
+    private val middle = LinearLayout(activity)
+    private lateinit var touchSurface: View
+    private lateinit var scrollSurface: View
+    private var appliedSize = -1
+    private var appliedOpacity = -1
+    /** Requested width for the landscape keyboard dock; the host reserves this space. */
+    val preferredWidthPx get() = dp((220f * pref.touchpadSizePercent / 100f).roundToInt())
+    private val appearanceChanges = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "touchpad_size" || key == "touchpad_opacity") refreshAppearance()
+    }
 
     init {
         panel.id = R.id.floating_touchpad
@@ -76,7 +95,6 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
         panel.isMotionEventSplittingEnabled = true
         expanded.orientation = LinearLayout.VERTICAL
         panel.addView(expanded, LinearLayout.LayoutParams(-1, -2))
-        val header = LinearLayout(activity)
         val handle = TextView(activity).apply {
             id = R.id.touchpad_handle
             text = activity.getString(R.string.touchpad_title)
@@ -98,7 +116,6 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
         expanded.addView(header)
         installPanelDrag(handle)
 
-        val middle = LinearLayout(activity)
         val surface = TextView(activity).apply {
             id = R.id.touchpad_surface
             text = "·  ·  ·"
@@ -121,6 +138,7 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
                 if (accessibilityClick) input.onVirtualPointerStop()
             }
         }
+        touchSurface = surface
         installSurface(surface)
         middle.addView(surface, LinearLayout.LayoutParams(0, dp(96), 1f))
         val scroll = TextView(activity).apply {
@@ -131,6 +149,7 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
             contentDescription = activity.getString(R.string.touchpad_scroll)
             gravity = Gravity.CENTER
         }
+        scrollSurface = scroll
         var scrollY = 0f
         var stripOwnsSession = false
         fun stopStrip(cancelled: Boolean) {
@@ -190,11 +209,53 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
             }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { setMargins(dp(2), dp(3), dp(2), 0) })
         }
         expanded.addView(buttons)
-        parent.addView(panel, FrameLayout.LayoutParams(dp(220), -2))
+        parent.addView(panel, FrameLayout.LayoutParams(preferredWidthPx, -2))
         parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
         panel.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
+        refreshAppearance()
         applyCollapsed()
         updateVisibility()
+        activity.lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                preferences.registerOnSharedPreferenceChangeListener(appearanceChanges)
+                refreshAppearance()
+            }
+            override fun onStop(owner: LifecycleOwner) {
+                preferences.unregisterOnSharedPreferenceChangeListener(appearanceChanges)
+            }
+        })
+    }
+
+    /** Read persisted settings on return from Settings, without restoring any held input. */
+    fun refreshAppearance() {
+        val size = pref.touchpadSizePercent
+        val opacity = pref.touchpadOpacityPercent
+        if (size == appliedSize && opacity == appliedOpacity) return
+        if (appliedSize != -1) activity.releaseInputControls()
+        appliedSize = size; appliedOpacity = opacity
+        panel.alpha = opacity / 100f
+        updateDimensions()
+        panel.post { reposition() }
+        onStateChanged?.invoke()
+    }
+
+    private fun updateDimensions() {
+        if (!::touchSurface.isInitialized || isTabbed) return
+        val obstruction = max(0, activity.toolbar.bottomObstruction - parent.paddingBottom)
+        val availableHeight = parent.height - parent.paddingTop - parent.paddingBottom - obstruction - dp(16)
+        val availableWidth = parent.width - parent.paddingLeft - parent.paddingRight - dp(16)
+        val desiredSurface = dp((96f * pref.touchpadSizePercent / 100f).roundToInt())
+        // Header/buttons keep their 48dp targets; shrink only the pointing surface to fit.
+        val surfaceHeight = if (!docked && availableHeight > 0)
+            desiredSurface.coerceAtMost(max(dp(72), availableHeight - dp(107))) else desiredSurface
+        listOf(touchSurface, scrollSurface).forEach { child ->
+            if (child.layoutParams.height != surfaceHeight)
+                child.layoutParams = child.layoutParams.apply { height = surfaceHeight }
+        }
+        val width = if (docked) -1 else if (availableWidth > 0)
+            preferredWidthPx.coerceAtMost(max(dp(165), availableWidth)) else preferredWidthPx
+        if (panel.layoutParams.width != width)
+            panel.layoutParams = panel.layoutParams.apply { this.width = width }
     }
 
     private fun button(description: Int, label: String, viewId: Int) = style.button(label, activity.getString(description)).apply {
@@ -226,13 +287,35 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
 
     /** Reparent the same input surface; moving controls never restores held buttons. */
     fun setDocked(value: Boolean) {
-        if (docked == value) return
+        if (isTabbed || docked == value) return
         activity.releaseInputControls()
         docked = value
         (panel.parent as android.view.ViewGroup).removeView(panel)
         panel.translationX = 0f; panel.translationY = 0f
         val target = if (value) activity.binding.touchpadDock else parent
-        target.addView(panel, FrameLayout.LayoutParams(if (value) -1 else dp(220), if (value) -1 else -2))
+        target.addView(panel, FrameLayout.LayoutParams(if (value) -1 else preferredWidthPx, if (value) -1 else -2))
+        compactForBounds = false
+        applyCollapsed()
+        updateVisibility()
+    }
+
+    /** The main Touchpad tab uses the same surface and input ownership as the overlay. */
+    fun setTabHost(target: FrameLayout?) {
+        if (tabHost === target) return
+        activity.releaseInputControls()
+        docked = false
+        tabHost = target
+        (panel.parent as? android.view.ViewGroup)?.removeView(panel)
+        panel.translationX = 0f; panel.translationY = 0f
+        (target ?: parent).addView(panel, FrameLayout.LayoutParams(if (target != null) -1 else preferredWidthPx,
+                if (target != null) -1 else -2))
+        header.isVisible = target == null
+        expanded.layoutParams = LinearLayout.LayoutParams(-1, if (target != null) -1 else -2)
+        middle.layoutParams = LinearLayout.LayoutParams(-1, if (target != null) 0 else -2,
+                if (target != null) 1f else 0f)
+        listOf(touchSurface, scrollSurface).forEach { child ->
+            child.layoutParams = child.layoutParams.apply { height = if (target != null) -1 else dp(96) }
+        }
         compactForBounds = false
         applyCollapsed()
         updateVisibility()
@@ -263,21 +346,22 @@ class FloatingTouchpad(private val activity: VncActivity, private val input: Inp
         activity.releaseInputControls(); pref.touchpadCollapsed = value; applyCollapsed(); updateVisibility(); onStateChanged?.invoke()
     }
     private fun applyCollapsed() {
-        val collapsed = pref.touchpadCollapsed || compactForBounds
+        val collapsed = !isTabbed && (pref.touchpadCollapsed || compactForBounds)
         expanded.isVisible = !collapsed
         panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
-            width = if (docked) -1 else dp(220)
+            width = if (docked || isTabbed) -1 else preferredWidthPx
         }
         panel.post { reposition() }
     }
 
     fun reposition() {
-        if (draggingPanel || docked) return
+        updateDimensions()
+        if (draggingPanel || docked || isTabbed) return
         val margin = dp(8)
         if (parent.width <= 0 || parent.height <= 0) return
         val obstruction = max(0, activity.toolbar.bottomObstruction - parent.paddingBottom)
-        val compact = parent.height - parent.paddingTop - parent.paddingBottom - obstruction < dp(220) ||
-                      parent.width - parent.paddingLeft - parent.paddingRight < dp(236)
+        val compact = parent.height - parent.paddingTop - parent.paddingBottom - obstruction < dp(195) ||
+                      parent.width - parent.paddingLeft - parent.paddingRight < dp(181)
         if (compact != compactForBounds) { compactForBounds = compact; applyCollapsed(); updateVisibility() }
         val minX = parent.paddingLeft + margin
         val minY = parent.paddingTop + margin

@@ -17,6 +17,7 @@ import android.widget.ArrayAdapter
 import androidx.core.view.isVisible
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.activityViewModels
+import com.gaurav.avnc.ui.common.GlassStyle
 import com.gaurav.avnc.R
 import com.gaurav.avnc.databinding.FragmentCredentialBinding
 import com.gaurav.avnc.model.LoginInfo
@@ -60,8 +61,7 @@ class LoginFragment : DialogFragment() {
         binding.remember.isVisible = viewModel.profile.isSaved() && loginType != LoginInfo.Type.SSH_KEY_PASSWORD
 
         binding.password.setOnEditorActionListener { _, _, _ ->
-            onOk()
-            dismiss()
+            if (onOk()) dismiss()
             true
         }
 
@@ -72,12 +72,18 @@ class LoginFragment : DialogFragment() {
         setupAutoComplete()
 
         return MaterialAlertDialogBuilder(requireContext())
+                .setBackground(GlassStyle(requireContext()).rounded())
                 .setTitle(getTitle())
                 .setView(binding.root)
-                .setPositiveButton(android.R.string.ok) { _, _ -> onOk() }
+                .setPositiveButton(android.R.string.ok, null)
                 .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
                 .create().apply {
                     setCanceledOnTouchOutside(false)
+                    setOnShowListener {
+                        getButton(Dialog.BUTTON_POSITIVE).setOnClickListener {
+                            if (onOk()) dismiss()
+                        }
+                    }
                 }
     }
 
@@ -96,15 +102,20 @@ class LoginFragment : DialogFragment() {
         return LoginInfo.fromProfile(p, loginType)
     }
 
-    private fun onOk() {
-        loginInfo.password = getRealPassword(loginInfo.password)
+    private fun onOk(): Boolean {
+        val username = binding.username.text.toString()
+        val password = getRealPassword(binding.password.text.toString())
+        // Empty credentials are valid for some VNC/SSH servers; authentication belongs to the server.
+        if (binding.usernameLayout.isVisible) loginInfo.username = username
+        if (binding.passwordLayout.isVisible) loginInfo.password = password
         viewModel.loginInfoRequest.offerResponse(loginInfo)
         if (binding.remember.isChecked)
             viewModel.loginInfoToBeRemembered += loginInfo
+        return true
     }
 
     private fun onCancel() {
-        requireActivity().finish()
+        (requireActivity() as VncActivity).disconnectSession()
     }
 
 

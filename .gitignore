@@ -1,6 +1,10 @@
 # Java class files
 *.class
 
+# Python tooling
+__pycache__/
+*.pyc
+
 # Gradle files
 .gradle/
 build/

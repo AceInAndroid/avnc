@@ -15,6 +15,7 @@ import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
 import com.gaurav.avnc.model.ServerProfile
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ServerProfileDao {
@@ -24,6 +25,12 @@ interface ServerProfileDao {
 
     @Query("SELECT * FROM profiles ORDER BY name COLLATE NOCASE")
     fun getSortedLiveList(): LiveData<List<ServerProfile>>
+
+    @Query("SELECT * FROM profiles")
+    fun observeList(): Flow<List<ServerProfile>>
+
+    @Query("SELECT * FROM profiles ORDER BY name COLLATE NOCASE")
+    fun observeSortedList(): Flow<List<ServerProfile>>
 
     //Synchronous version
     @Query("SELECT * FROM profiles")

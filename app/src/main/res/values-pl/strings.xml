@@ -28,7 +28,7 @@
     <string name="msg_about_app">Szybki i bezpieczny klient VNC. Umożliwia zdalne wyświetlanie i kontrolowanie dowolnego urządzenia z serwerem VNC.
 \n
 \n
-\nAVNC jest oprogramowaniem typu open source i copyleft - powstał dzięki pomocy wielu współpracowników.</string>
+\nFastVNC jest oprogramowaniem typu open source i copyleft - powstał dzięki pomocy wielu współpracowników.</string>
     <string name="msg_pip_not_supported">Brak wsparcia dla tego urządzenia</string>
     <string name="msg_loading">Ładowanie…</string>
     <string name="msg_invalid_key_file">Nieprawidłowy plik klucza prywatnego</string>

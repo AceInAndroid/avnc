@@ -10,7 +10,7 @@
     <string name="msg_zoom_locked">Zoom bloccato</string>
     <string name="title_view_only_mode">Solo visualizzazione</string>
     <string name="hint_repeater_host">Ripeti host</string>
-    <string name="msg_wake_on_lan_help">Wake-on-LAN può essere usato per accendere a distanza un computer.\n\nInnanzitutto, configurare WoL su computer remoto, quindi abilitarlo in AVNC.\nUna volta abilitato, il pacchetto magico WoL verrà inviato automaticamente prima di connettersi a questo server.</string>
+    <string name="msg_wake_on_lan_help">Wake-on-LAN può essere usato per accendere a distanza un computer.\n\nInnanzitutto, configurare WoL su computer remoto, quindi abilitarlo in FastVNC.\nUna volta abilitato, il pacchetto magico WoL verrà inviato automaticamente prima di connettersi a questo server.</string>
     <string name="title_load_defaults">Carica predefinito</string>
     <string name="title_export">Esporta</string>
     <string name="title_unlock_dialog">Sblocca per continuare</string>
@@ -102,7 +102,7 @@
     <string name="title_export_passwords_and_keys">Esporta password e chiavi</string>
     <string name="hint_server_id">Server ID</string>
     <string name="title_source_code">Codice sorgente</string>
-    <string name="msg_about_app">Un client VNC veloce e sicuro. Visualizza e controlla da remoto qualsiasi dispositivo che esegue un server VNC.\n\n\nAVNC è un software open source e copyleft —realizzato con l\'aiuto di molti collaboratori.</string>
+    <string name="msg_about_app">Un client VNC veloce e sicuro. Visualizza e controlla da remoto qualsiasi dispositivo che esegue un server VNC.\n\n\nFastVNC è un software open source e copyleft —realizzato con l\'aiuto di molti collaboratori.</string>
     <string name="msg_server_profile_added">Server aggiunto</string>
     <string name="msg_copied_to_clipboard">Copiato</string>
     <string name="title_unknown_ssh_host">Host SSH sconosciuto</string>

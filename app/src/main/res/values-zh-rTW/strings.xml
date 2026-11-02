@@ -109,7 +109,7 @@
     <string name="msg_about_app">快速安全的 VNC 用戶端，遠程查看和控制任何 VNC 伺服器。
 \n
 \n
-\nAVNC 是一個開源和自由軟體：在許多貢獻者的幫助下製作。</string>
+\nFastVNC 是一個開源和自由軟體：在許多貢獻者的幫助下製作。</string>
     <string name="desc_retry_connection_btn">重新連接</string>
     <string name="desc_server_url">伺服器地址</string>
     <string name="desc_help_btn">幫助</string>

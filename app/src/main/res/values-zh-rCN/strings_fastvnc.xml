@@ -1,0 +1,8 @@
+<resources>
+    <string name="fastvnc_attribution">FastVNC 基于 Gaurav Ujjwal 及贡献者开发的 AVNC 独立维护，保留原作者版权和第三方声明，采用 GNU GPL v3 或更新版本发布。品牌、界面及远程输入修改日期：2026年11月2日。</string>
+    <string name="fastvnc_native_library_missing">缺少原生库，请安装支持此设备处理器的 FastVNC 版本。</string>
+    <string name="fastvnc_welcome_title">欢迎使用 FastVNC</string>
+    <string name="fastvnc_welcome_summary">通过电脑键盘、灵敏触控板和熟悉的 Mac 或 Windows 操作，连接你的电脑。</string>
+    <string name="fastvnc_project_summary">FastVNC 是开源软件，可在项目页面查看源代码和反馈问题。</string>
+    <string name="fastvnc_whats_new">更新内容</string>
+</resources>

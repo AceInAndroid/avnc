@@ -12,14 +12,19 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import androidx.biometric.BiometricPrompt
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.scrollTo
+import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.matcher.IntentMatchers
 import androidx.test.espresso.matcher.ViewMatchers.isChecked
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isEnabled
 import androidx.test.espresso.matcher.ViewMatchers.isNotChecked
 import androidx.test.espresso.matcher.ViewMatchers.withSubstring
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -46,6 +51,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.hamcrest.Matchers.not
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -65,10 +71,9 @@ class ImportExportTest {
 
     @Before
     fun openImportExportScreen() {
-        onView(withText(R.string.pref_tools)).doClick()
-        onView(withText(R.string.pref_import_export)).doClick()
-        onView(withText(R.string.title_import)).checkIsDisplayed()
-        onView(withText(R.string.title_export)).checkIsDisplayed()
+        onView(withText(R.string.settings_backup)).perform(scrollTo()).doClick()
+        onView(withText(R.string.title_import)).perform(scrollTo()).checkIsDisplayed()
+        onView(withText(R.string.title_export)).perform(scrollTo()).checkIsDisplayed()
     }
 
     @Before
@@ -94,7 +99,7 @@ class ImportExportTest {
 
         // Export
         BiometricMocking.start()
-        onView(withText(R.string.title_export)).doClick()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).doClick()
         BiometricMocking.endWithSuccess()
         onView(withText(R.string.msg_exported)).checkWillBeDisplayed()
 
@@ -123,7 +128,7 @@ class ImportExportTest {
         // Export
         BiometricMocking.start()
         onView(withText(R.string.title_export_passwords_and_keys)).doClick() // Check
-        onView(withText(R.string.title_export)).doClick()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).doClick()
         BiometricMocking.endWithSuccess()
         onView(withText(R.string.msg_exported)).checkWillBeDisplayed()
 
@@ -139,12 +144,38 @@ class ImportExportTest {
     fun exportFailsOnIncorrectBiometric() {
         BiometricMocking.start()
         onView(withText(R.string.title_export_passwords_and_keys)).doClick()
-        onView(withText(R.string.title_export)).doClick()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).doClick()
 
         val errorMessage = "You shall not pass!!!"
         BiometricMocking.endWithError(errorMessage)
         onView(withSubstring(errorMessage)).checkWillBeDisplayed()
+        onView(withId(R.id.backup_retry)).checkIsDisplayed()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).check(matches(isEnabled()))
         onView(withText(R.string.msg_exported)).check(doesNotExist())
+        Intents.assertNoUnverifiedIntents()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 28)
+    fun exportAuthenticationCancellationIsNeutralAndAllowsAnotherAttempt() {
+        BiometricMocking.start()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).doClick()
+        val cancellationMessage = "The user dismissed authentication"
+        BiometricMocking.endWithError(cancellationMessage, BiometricPrompt.ERROR_USER_CANCELED)
+
+        onView(withId(R.id.backup_status)).perform(scrollTo())
+                .check(matches(withText(R.string.settings_backup_cancelled)))
+        onView(withId(R.id.backup_retry)).check(matches(not(isDisplayed())))
+        onView(withText(cancellationMessage)).check(doesNotExist())
+        onView(withId(R.id.export_btn)).perform(scrollTo()).check(matches(isEnabled()))
+        Intents.assertNoUnverifiedIntents()
+
+        BiometricMocking.start()
+        onView(withId(R.id.export_btn)).doClick()
+        val errorMessage = "Authentication is temporarily locked"
+        BiometricMocking.endWithError(errorMessage, BiometricPrompt.ERROR_LOCKOUT)
+        onView(withSubstring(errorMessage)).checkWillBeDisplayed()
+        onView(withId(R.id.backup_retry)).checkIsDisplayed()
         Intents.assertNoUnverifiedIntents()
     }
 
@@ -154,9 +185,9 @@ class ImportExportTest {
                 .respondWithFunction { throw ActivityNotFoundException() }
 
         BiometricMocking.start()
-        onView(withText(R.string.title_export)).doClick()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).doClick()
         BiometricMocking.endWithSuccess()
-        onView(withSubstring("No app found to choose backup file")).checkWillBeDisplayed()
+        onView(withText(R.string.settings_backup_file_missing)).checkWillBeDisplayed()
     }
 
 
@@ -169,7 +200,7 @@ class ImportExportTest {
         // Import
         BiometricMocking.start()
         onView(withText(R.string.title_delete_servers_before_import)).doClick()
-        onView(withText(R.string.title_import)).doClick()
+        onView(withId(R.id.import_btn)).perform(scrollTo()).doClick()
         BiometricMocking.endWithSuccess()
         onView(withText(R.string.msg_imported)).checkWillBeDisplayed()
 
@@ -188,7 +219,7 @@ class ImportExportTest {
 
         // Import
         BiometricMocking.start()
-        onView(withText(R.string.title_import)).doClick()
+        onView(withId(R.id.import_btn)).perform(scrollTo()).doClick()
         BiometricMocking.endWithSuccess()
         onView(withText(R.string.msg_imported)).checkWillBeDisplayed()
 
@@ -221,7 +252,7 @@ class ImportExportTest {
         BiometricMocking.start()
         onView(withText(R.string.title_export_settings)).check(matches(isChecked()))
         onView(withText(R.string.title_export_profiles)).doClick().check(matches(isNotChecked()))
-        onView(withText(R.string.title_export)).doClick()
+        onView(withId(R.id.export_btn)).perform(scrollTo()).doClick()
         BiometricMocking.endWithSuccess()
         onView(withText(R.string.msg_exported)).checkWillBeDisplayed()
 

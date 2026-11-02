@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<resources>
+    <string name="quick_editor_invalid_address">Enter a host, host:port or VNC link. Use [IPv6]:port when including a port.</string>
+    <string name="quick_editor_address_port_kept">The separate Port field takes priority over the port in this address.</string>
+    <string name="quick_editor_address_settings">Link options and sign-in details are not imported automatically. Check the separate authentication fields.</string>
+    <string name="quick_editor_close">Close connection editor</string>
+    <string name="quick_editor_intro">Add the address to get started. Name and password are optional.</string>
+    <string name="quick_editor_connection">Connection and authentication</string>
+    <string name="quick_editor_picture">Picture and displays</string>
+    <string name="quick_editor_input">Keyboard and touchpad</string>
+    <string name="quick_editor_other">Other options</string>
+    <string name="quick_editor_save_connect">Save and connect</string>
+    <string name="quick_editor_save_only">Save only</string>
+    <string name="quick_editor_saving">Saving…</string>
+    <string name="quick_editor_save_failed">Could not save this connection. Your changes are kept. Tap Save to retry.</string>
+    <string name="quick_editor_invalid_port">Enter a port from 1 to 65535</string>
+    <string name="quick_editor_invalid_repeater">Enter a repeater ID from 0 to 999999999</string>
+    <string name="quick_editor_discard_title">Discard changes?</string>
+    <string name="quick_editor_discard_message">This connection has unsaved changes.</string>
+    <string name="quick_editor_continue">Continue editing</string>
+    <string name="quick_editor_discard">Discard</string>
+    <string name="quick_editor_expanded">Expanded</string>
+    <string name="quick_editor_collapsed">Collapsed</string>
+    <string name="quick_editor_choice">%1$s · %2$s</string>
+    <string name="quick_editor_quality_custom">Custom / previous settings</string>
+    <string name="quick_editor_test">Test without saving</string>
+    <string name="quick_editor_displays_hint">Choose or calibrate individual displays after connecting. Existing display selection and calibration are kept.</string>
+</resources>

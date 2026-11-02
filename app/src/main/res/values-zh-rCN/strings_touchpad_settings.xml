@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="touchpad_appearance_title">触控板外观</string>
+    <string name="touchpad_size_title">大小（%）</string>
+    <string name="touchpad_size_summary">75–150%。保留足够大的按键，并适应当前屏幕空间。</string>
+    <string name="touchpad_opacity_title">不透明度（%）</string>
+    <string name="touchpad_opacity_summary">30–100%。数值越低，越能看清触控板后方的远程画面。</string>
+</resources>

@@ -46,7 +46,7 @@ abstract class DebugFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        activity?.title = title()
+        updateSettingsTitle(title())
     }
 
     fun copyLogs(logs: String) {

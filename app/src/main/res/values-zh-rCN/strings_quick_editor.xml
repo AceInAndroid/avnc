@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<resources>
+    <string name="quick_editor_invalid_address">请输入主机名、主机:端口或 VNC 链接。IPv6 带端口时请使用 [IPv6]:端口。</string>
+    <string name="quick_editor_address_port_kept">已保留独立“端口”字段的值，优先于地址内的端口。</string>
+    <string name="quick_editor_address_settings">不会自动导入链接选项及登录信息，请核对独立的认证字段。</string>
+    <string name="quick_editor_close">关闭连接编辑器</string>
+    <string name="quick_editor_intro">输入地址即可开始，名称和密码为选填。</string>
+    <string name="quick_editor_connection">连接与认证</string>
+    <string name="quick_editor_picture">画面与显示器</string>
+    <string name="quick_editor_input">键盘与触控板</string>
+    <string name="quick_editor_other">其他选项</string>
+    <string name="quick_editor_save_connect">保存并连接</string>
+    <string name="quick_editor_save_only">仅保存</string>
+    <string name="quick_editor_saving">正在保存…</string>
+    <string name="quick_editor_save_failed">无法保存连接，已保留修改。请点击保存重试。</string>
+    <string name="quick_editor_invalid_port">请输入 1 至 65535 的端口</string>
+    <string name="quick_editor_invalid_repeater">请输入 0 至 999999999 的中继 ID</string>
+    <string name="quick_editor_discard_title">要放弃修改吗？</string>
+    <string name="quick_editor_discard_message">此连接还有未保存的修改。</string>
+    <string name="quick_editor_continue">继续编辑</string>
+    <string name="quick_editor_discard">放弃修改</string>
+    <string name="quick_editor_expanded">已展开</string>
+    <string name="quick_editor_collapsed">已收起</string>
+    <string name="quick_editor_choice">%1$s · %2$s</string>
+    <string name="quick_editor_quality_custom">自定义 / 原有设置</string>
+    <string name="quick_editor_test">不保存，试连</string>
+    <string name="quick_editor_displays_hint">连接后可选择或校准具体显示器，已有的显示器选择和校准会保留。</string>
+</resources>
